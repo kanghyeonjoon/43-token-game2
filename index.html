@@ -1170,7 +1170,11 @@
             allUsers = data || [];
             console.log("👥 로드된 유저 수:", allUsers.length);
             
-            if (!silent) renderUserSelection();
+            // 항상 렌더링 실행
+            console.log("🎨 renderUserSelection 호출 시작");
+            renderUserSelection();
+            console.log("🎨 renderUserSelection 호출 완료");
+            
             renderRanking(); 
             renderDropdown(); 
             updateEcosystem();
@@ -1182,7 +1186,13 @@
         }
 
         function renderUserSelection() {
+            console.log("🎨 renderUserSelection 실행됨, allUsers:", allUsers.length);
             const grid = document.getElementById('userGrid');
+            
+            if (!grid) {
+                console.error("❌ userGrid 요소를 찾을 수 없음!");
+                return;
+            }
             
             if (allUsers.length === 0) {
                 grid.innerHTML = '<div class="loading-msg">👋 등록된 참가자가 없습니다.<br>아래 "새로 등록하기"를 눌러 시작하세요!</div>';
@@ -1190,7 +1200,9 @@
             }
             
             grid.innerHTML = '';
-            allUsers.sort((a, b) => a.name.localeCompare(b.name)).forEach(u => {
+            console.log("🎨 유저 카드 생성 시작");
+            allUsers.sort((a, b) => a.name.localeCompare(b.name)).forEach((u, index) => {
+                console.log(`  - 유저 ${index + 1}: ${u.name}`);
                 const deleteBtn = isAdminMode ? `<div class="delete-btn" onclick="deleteUser('${u.user_id}', '${u.name}'); event.stopPropagation();">X</div>` : '';
 
                 const div = document.createElement('div');
@@ -1205,6 +1217,7 @@
                 };
                 grid.appendChild(div);
             });
+            console.log("🎨 유저 카드 생성 완료");
         }
 
         async function checkSystemAutoReset() {
