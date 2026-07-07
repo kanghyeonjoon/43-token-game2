@@ -44,6 +44,8 @@
   .filters button:hover { border-color: var(--accent); color: var(--text); }
   .periods { display: flex; gap: 4px; margin-left: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
   #regionSel { margin-left: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; color: var(--text); font-size: 13px; cursor: pointer; }
+  #dateSel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; color: var(--text); font-size: 13px; cursor: pointer; color-scheme: dark; }
+  #dateSel.on { border-color: var(--accent2); color: var(--accent2); font-weight: 700; }
   #regionSel ~ .periods { margin-left: 0; }
   .delta { font-size: 11px; font-weight: 800; margin-left: 4px; }
   .delta.up { color: #4dff88; }
@@ -220,6 +222,7 @@
     <button class="period active" data-period="week">이번 주</button>
     <button class="period" data-period="month">이번 달</button>
   </div>
+  <input type="date" id="dateSel" title="특정 날짜에 게시된 인기 영상 보기 (최근 31일)">
   <div class="sortmenu" id="vidSortMenu">
     <button class="sorttoggle">정렬: <span class="curlabel">조회수순</span> <span class="caret">▼</span></button>
     <div class="sortlist"></div>
@@ -403,7 +406,7 @@
 const CSRF_TOKEN = '__CSRF_TOKEN__';
 const POST_HEADERS = { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF_TOKEN };
 
-const state = { tab: 'youtube', category: '전체', period: 'week', categories: ['전체'], search: '', region: 'KR' };
+const state = { tab: 'youtube', category: '전체', period: 'week', categories: ['전체'], search: '', region: 'KR', date: '' };
 
 /* ---------- 로컬 저장 헬퍼 (관심 키워드 · 보관함) ---------- */
 const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
@@ -544,13 +547,16 @@ async function loadVideos(force = false) {
   const wantLikes = vidState.sort === 'likes' || vidState.sort === 'ratio' || filterState.value !== 'all';
   grid.innerHTML = '';
   status.style.display = 'block';
-  status.textContent = wantLikes
+  status.textContent = state.date
+    ? `${state.date} 게시 영상을 찾는 중입니다... (영상별 게시일을 확인하느라 20~30초 걸릴 수 있어요)`
+    : wantLikes
     ? '좋아요·구독자 수를 불러오는 중입니다... (영상마다 조회하느라 조금 걸려요)'
     : '영상을 불러오는 중입니다...';
   const q = new URLSearchParams({
     category: state.category, period: state.period,
     shorts: state.tab === 'shorts' ? '1' : '0', force: force ? '1' : '0',
-    enrich: wantLikes ? '1' : '0', q: state.search, region: state.region
+    enrich: wantLikes ? '1' : '0', q: state.search, region: state.region,
+    date: state.date
   });
   try {
     const res = await fetch('/api/videos?' + q);
@@ -559,8 +565,14 @@ async function loadVideos(force = false) {
     document.getElementById('updated').textContent =
       '업데이트: ' + new Date(data.fetchedAt * 1000).toLocaleTimeString('ko-KR');
     vidData = data.videos;
-    vidHasLikes = wantLikes;
-    if (!vidData.length) { status.style.display = 'block'; status.textContent = '결과가 없습니다.'; return; }
+    vidHasLikes = wantLikes || !!state.date;  // 날짜 모드는 좋아요·구독자가 함께 조회됨
+    if (!vidData.length) {
+      status.style.display = 'block';
+      status.textContent = state.date
+        ? `${state.date}에 게시된 인기 영상을 찾지 못했습니다. 카테고리를 '전체'로 바꾸거나 다른 날짜를 골라보세요.`
+        : '결과가 없습니다.';
+      return;
+    }
     status.style.display = 'none';
     renderVideos();
     updateKwPanel();
@@ -801,7 +813,7 @@ function videoCard(v, rank) {
   el.querySelector('.thumb').src = v.thumbnail;
   el.querySelector('.title').textContent = v.title;
   el.querySelector('.chn').textContent = v.channel;
-  el.querySelector('.pub').textContent = v.published || '';
+  el.querySelector('.pub').textContent = v.pubDate || v.published || '';
   if (v.length) el.querySelector('.len').textContent = v.length;
   favButton(el.querySelector('div'), {
     url: 'https://www.youtube.com/watch?v=' + v.id,
@@ -1465,7 +1477,7 @@ function renderChannels() {
     el.querySelector('.thumb').src = v.thumbnail;
     el.querySelector('.title').textContent = v.title;
     el.querySelector('.chn').textContent = v.channel;
-    el.querySelector('.pub').textContent = v.published || '';
+    el.querySelector('.pub').textContent = v.pubDate || v.published || '';
     if (v.length) el.querySelector('.len').textContent = v.length;
     favButton(el.querySelector('div'), {
       url: 'https://www.youtube.com/watch?v=' + v.id,
@@ -1571,9 +1583,31 @@ document.getElementById('periods').onclick = e => {
   const btn = e.target.closest('.period');
   if (!btn) return;
   state.period = btn.dataset.period;
+  state.date = '';  // 기간 버튼을 누르면 달력 선택 해제
+  const ds = document.getElementById('dateSel');
+  ds.value = ''; ds.classList.remove('on');
   document.querySelectorAll('.period').forEach(p => p.classList.toggle('active', p === btn));
   loadVideos();
 };
+/* ---------- 📅 달력: 특정 날짜의 인기 영상 ---------- */
+(() => {
+  const ds = document.getElementById('dateSel');
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  ds.max = iso(new Date());
+  ds.min = iso(new Date(Date.now() - 31 * 86400000));
+  ds.addEventListener('change', () => {
+    if (!ds.value) {
+      state.date = '';
+      ds.classList.remove('on');
+      loadVideos();
+      return;
+    }
+    state.date = ds.value;
+    ds.classList.add('on');
+    document.querySelectorAll('.period').forEach(p => p.classList.remove('active'));
+    loadVideos();
+  });
+})();
 /* ---------- 검색 ---------- */
 document.getElementById('searchForm').addEventListener('submit', e => {
   e.preventDefault();

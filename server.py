@@ -4,6 +4,7 @@
 실행: python3 server.py  →  http://localhost:8778
 """
 import base64
+import datetime
 import email.utils
 import json
 import os
@@ -325,8 +326,16 @@ def parse_subscribers(s: str) -> int:
     return int(num * SUB_UNITS.get(m.group(2) or "", 1))
 
 
+def parse_pub_date(s: str) -> str:
+    """/next 응답의 dateText('2026. 7. 6.' 형태)에서 정확한 게시일(YYYY-MM-DD)을 뽑습니다."""
+    m = re.search(r'"dateText":\s*\{"simpleText":"[^"]*?(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})', s)
+    if not m:
+        return ""
+    return "%04d-%02d-%02d" % (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+
 def yt_video_stats(video_id: str):
-    """youtubei/v1/next로 영상 1개의 좋아요 수와 채널 구독자 수를 가져옵니다(검색 API엔 없음)."""
+    """youtubei/v1/next로 영상 1개의 좋아요·채널 구독자 수·정확한 게시일을 가져옵니다(검색 API엔 없음)."""
     payload = {"context": {"client": {
         "clientName": "WEB", "clientVersion": "2.20250624.01.00", "hl": "ko", "gl": "KR"}},
         "videoId": video_id}
@@ -335,9 +344,9 @@ def yt_video_stats(video_id: str):
         s = body.decode("utf-8", "ignore")
         m = re.search(r"다른 사용자 ([0-9,]+)명", s) or re.search(r"along with ([0-9,]+) other", s)
         likes = int(m.group(1).replace(",", "")) + 1 if m else 0
-        return likes, parse_subscribers(s)
+        return likes, parse_subscribers(s), parse_pub_date(s)
     except Exception:
-        return 0, 0
+        return 0, 0, ""
 
 
 def enrich_likes(videos, limit=45):
@@ -347,9 +356,11 @@ def enrich_likes(videos, limit=45):
         return videos
     with ThreadPoolExecutor(max_workers=12) as pool:
         stats = pool.map(lambda v: yt_video_stats(v["id"]), todo)
-    for v, (likes, subs) in zip(todo, stats):
+    for v, (likes, subs, pub_date) in zip(todo, stats):
         v["likes"] = likes
         v["subs"] = subs
+        if pub_date:
+            v["pubDate"] = pub_date
     return videos
 
 
@@ -382,6 +393,37 @@ def get_videos(category: str, period: str, shorts: bool, force: bool,
             enrich_likes(vids)
         return vids
     return cached(("yt", query or category, period, shorts, enrich, region), force, fetch)
+
+
+def get_videos_for_date(category: str, shorts: bool, force: bool,
+                        query: str, region: str, date_str: str):
+    """특정 날짜에 게시된 인기 영상: 굵은 기간으로 검색한 뒤 영상별 정확한 게시일을 조회해 선별합니다."""
+    target = datetime.date.fromisoformat(date_str)
+    days = (datetime.date.today() - target).days
+    period = "day" if days <= 0 else ("week" if days <= 6 else "month")
+
+    def fetch():
+        if query:
+            queries = [query]
+        elif category == "전체":
+            queries = [category_query(c, region) for c in ALL_MERGE]
+        elif category == "AI":
+            queries = AI_YT_QUERIES
+        else:
+            queries = [category_query(category, region)]
+        vids = merge_yt_searches(queries, period, shorts, region)
+        cands = vids[:70]  # 상위 후보만 정확한 게시일 확인 (요청 수 제한)
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            stats = pool.map(lambda v: yt_video_stats(v["id"]), cands)
+        out = []
+        for v, (likes, subs, pub_date) in zip(cands, stats):
+            v["likes"], v["subs"] = likes, subs
+            if pub_date:
+                v["pubDate"] = pub_date
+            if pub_date == date_str:
+                out.append(v)
+        return out
+    return cached(("ytdate", query or category, shorts, region, date_str), force, fetch)
 
 
 # ================================================================ 인스타그램 릴스
@@ -903,6 +945,24 @@ class Handler(BaseHTTPRequestHandler):
             if not query and category not in ("전체", "AI") and category not in CATEGORIES:
                 self._send(400, {"error": "unknown category"})
                 return
+            date_s = qs.get("date", [""])[0]
+            if date_s:
+                # 달력 모드: 최근 31일 안의 특정 날짜에 게시된 인기 영상
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_s):
+                    self._send(400, {"error": "bad date"})
+                    return
+                try:
+                    target = datetime.date.fromisoformat(date_s)
+                except ValueError:
+                    self._send(400, {"error": "bad date"})
+                    return
+                days = (datetime.date.today() - target).days
+                if days < 0 or days > 31:
+                    self._send(400, {"error": "date out of range", "message": "최근 31일 안의 날짜만 조회할 수 있습니다."})
+                    return
+                videos, fetched_at = get_videos_for_date(category, shorts, force, query, region, date_s)
+                self._send(200, {"videos": videos[:60], "fetchedAt": fetched_at})
+                return
             videos, fetched_at = get_videos(category, period, shorts, force, enrich, query, region)
             annotate_and_record(hist_key(category, period, shorts, query, region), videos)
             self._send(200, {"videos": videos[:60], "fetchedAt": fetched_at})
@@ -929,7 +989,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "bad video id"})
                 return
             stats, _ = cached(("stats", vid), False,
-                              lambda: dict(zip(("likes", "subs"), yt_video_stats(vid))))
+                              lambda: dict(zip(("likes", "subs", "pubDate"), yt_video_stats(vid))))
             self._send(200, stats)
             return
 
