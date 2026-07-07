@@ -30,6 +30,12 @@
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip { padding: 6px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap; }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .filters input, .filters select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 12.5px; }
+  .filters input { width: 160px; }
+  .filters input:focus { outline: none; border-color: var(--accent2); }
+  .filters button { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
+  .filters button:hover { border-color: var(--accent); color: var(--text); }
   .periods { display: flex; gap: 4px; margin-left: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
   .period { padding: 5px 12px; border-radius: 8px; background: transparent; border: none; color: var(--muted); font-size: 13px; cursor: pointer; }
   .period.active { background: var(--accent2); color: #fff; font-weight: 700; }
@@ -158,12 +164,25 @@
   <div class="chips" id="chips"></div>
   <div class="periods" id="periods">
     <button class="period" data-period="day">오늘</button>
+    <button class="period" data-period="yesterday">어제</button>
     <button class="period active" data-period="week">이번 주</button>
     <button class="period" data-period="month">이번 달</button>
   </div>
   <div class="sortmenu" id="vidSortMenu">
     <button class="sorttoggle">정렬: <span class="curlabel">조회수순</span> <span class="caret">▼</span></button>
     <div class="sortlist"></div>
+  </div>
+  <div class="filters" id="filters">
+    <input id="fInclude" type="text" placeholder="🔎 포함 단어 (쉼표로 여러 개)">
+    <input id="fExclude" type="text" placeholder="🚫 제외 단어 (쉼표로 여러 개)">
+    <select id="fMinViews">
+      <option value="0">조회수 전체</option>
+      <option value="100000">10만 이상</option>
+      <option value="500000">50만 이상</option>
+      <option value="1000000">100만 이상</option>
+      <option value="5000000">500만 이상</option>
+    </select>
+    <button id="fClear">필터 해제</button>
   </div>
 </div>
 
@@ -354,14 +373,46 @@ async function loadVideos(force = false) {
     status.textContent = '불러오기에 실패했습니다. 네트워크를 확인해 주세요.';
   }
 }
+/* 클라이언트 필터: 제목·채널명에 대한 포함/제외 단어 + 최소 조회수 */
+const filterState = { inc: '', exc: '', minViews: 0 };
+const splitWords = s => s.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
+function applyVidFilters(list) {
+  const incs = splitWords(filterState.inc);
+  const excs = splitWords(filterState.exc);
+  return list.filter(v => {
+    const text = ((v.title || '') + ' ' + (v.channel || '')).toLowerCase();
+    if (incs.length && !incs.some(w => text.includes(w))) return false;
+    if (excs.some(w => text.includes(w))) return false;
+    if ((v.views || 0) < filterState.minViews) return false;
+    return true;
+  });
+}
 function renderVideos() {
   const grid = document.getElementById('grid');
+  const status = document.getElementById('status');
   grid.className = 'grid' + (state.tab === 'shorts' ? ' shorts' : '');
   const f = vidState.sort;
-  const sorted = vidData.slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
+  const sorted = applyVidFilters(vidData).sort((a, b) => (b[f] || 0) - (a[f] || 0));
   grid.innerHTML = '';
+  if (!sorted.length && vidData.length) {
+    status.style.display = 'block';
+    status.textContent = '필터 조건에 맞는 영상이 없습니다. (전체 ' + vidData.length + '개 중 0개)';
+    return;
+  }
+  status.style.display = 'none';
   sorted.forEach((v, i) => grid.appendChild(videoCard(v, i + 1)));
 }
+document.getElementById('fInclude').addEventListener('input', e => { filterState.inc = e.target.value; renderVideos(); });
+document.getElementById('fExclude').addEventListener('input', e => { filterState.exc = e.target.value; renderVideos(); });
+document.getElementById('fMinViews').addEventListener('change', e => { filterState.minViews = Number(e.target.value); renderVideos(); });
+document.getElementById('fClear').onclick = () => {
+  filterState.inc = filterState.exc = '';
+  filterState.minViews = 0;
+  document.getElementById('fInclude').value = '';
+  document.getElementById('fExclude').value = '';
+  document.getElementById('fMinViews').value = '0';
+  renderVideos();
+};
 function videoCard(v, rank) {
   const el = document.createElement('div');
   el.className = 'card';

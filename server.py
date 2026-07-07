@@ -55,7 +55,9 @@ CATEGORIES = {
 ALL_MERGE = ["먹방", "브이로그", "예능/코미디", "뷰티/패션", "영화/드라마", "여행"]
 
 # 검색 필터 protobuf: 업로드 날짜 (2=오늘, 3=이번 주, 4=이번 달)
-PERIOD_CODE = {"day": 2, "week": 3, "month": 4}
+# "어제(yesterday)"는 유튜브에 전용 필터가 없어 '이번 주'로 받은 뒤
+# 게시일 텍스트가 "1일 전"인 영상만 남기는 방식으로 처리합니다.
+PERIOD_CODE = {"day": 2, "yesterday": 3, "week": 3, "month": 4}
 
 # 검색 결과에 섞여 오는 추천 섹션 영상이 기간 필터를 우회하는 경우를 걸러내기 위한
 # 기간별 제외 문구 ("N일 전" 형태의 게시일 텍스트 기준)
@@ -113,6 +115,9 @@ IMG_PROXY_ALLOW = (".cdninstagram.com", ".fbcdn.net", ".ytimg.com",
 
 
 def within_period(published: str, period: str) -> bool:
+    if period == "yesterday":
+        # 24~48시간 전 업로드 영상은 "1일 전"으로 표시됩니다. (라이브 등 게시일 없는 항목은 제외)
+        return (published or "").strip() == "1일 전"
     if not published:
         return True  # 게시일 정보가 없으면(라이브 등) 통과
     return not any(word in published for word in PERIOD_EXCLUDE.get(period, ()))
