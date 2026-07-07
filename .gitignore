@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+reels_accounts.json
+x_accounts.json
+threads_accounts.json
+tiktok_accounts.json
