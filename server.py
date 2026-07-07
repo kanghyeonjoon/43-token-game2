@@ -217,8 +217,26 @@ def yt_search(query: str, period: str, shorts: bool):
     return unique
 
 
-def yt_like_count(video_id: str):
-    """youtubei/v1/next로 영상 1개의 좋아요 수를 가져옵니다(검색 API엔 없음)."""
+# 구독자 수 표기 단위 → 숫자 배수 (한국어/영어 UI 모두 대응)
+SUB_UNITS = {"억": 100000000, "만": 10000, "천": 1000,
+             "K": 1000, "M": 1000000, "B": 1000000000}
+
+
+def parse_subscribers(s: str) -> int:
+    """응답 본문에서 '구독자 123만명' / '1.2M subscribers' 형태를 숫자로 변환합니다."""
+    m = (re.search(r"구독자\s*([0-9][0-9,.]*)\s*(억|만|천)?\s*명", s)
+         or re.search(r"([0-9][0-9,.]*)\s*([KMB])?\s*subscribers", s))
+    if not m:
+        return 0
+    try:
+        num = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return 0
+    return int(num * SUB_UNITS.get(m.group(2) or "", 1))
+
+
+def yt_video_stats(video_id: str):
+    """youtubei/v1/next로 영상 1개의 좋아요 수와 채널 구독자 수를 가져옵니다(검색 API엔 없음)."""
     payload = {"context": {"client": {
         "clientName": "WEB", "clientVersion": "2.20250624.01.00", "hl": "ko", "gl": "KR"}},
         "videoId": video_id}
@@ -226,20 +244,22 @@ def yt_like_count(video_id: str):
         _, body = http_get("https://www.youtube.com/youtubei/v1/next", payload=payload, timeout=10)
         s = body.decode("utf-8", "ignore")
         m = re.search(r"다른 사용자 ([0-9,]+)명", s) or re.search(r"along with ([0-9,]+) other", s)
-        return int(m.group(1).replace(",", "")) + 1 if m else 0
+        likes = int(m.group(1).replace(",", "")) + 1 if m else 0
+        return likes, parse_subscribers(s)
     except Exception:
-        return 0
+        return 0, 0
 
 
 def enrich_likes(videos, limit=45):
-    """영상 리스트에 좋아요 수(likes)를 병렬로 채웁니다. 이미 채워진 항목은 건너뜁니다."""
-    todo = [v for v in videos[:limit] if not v.get("likes")]
+    """영상 리스트에 좋아요 수(likes)와 구독자 수(subs)를 병렬로 채웁니다. 이미 채워진 항목은 건너뜁니다."""
+    todo = [v for v in videos[:limit] if not v.get("likes") and not v.get("subs")]
     if not todo:
         return videos
     with ThreadPoolExecutor(max_workers=12) as pool:
-        counts = pool.map(lambda v: yt_like_count(v["id"]), todo)
-    for v, c in zip(todo, counts):
-        v["likes"] = c
+        stats = pool.map(lambda v: yt_video_stats(v["id"]), todo)
+    for v, (likes, subs) in zip(todo, stats):
+        v["likes"] = likes
+        v["subs"] = subs
     return videos
 
 

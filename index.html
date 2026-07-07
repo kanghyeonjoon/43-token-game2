@@ -346,11 +346,11 @@ async function loadVideos(force = false) {
   const seq = ++loadSeq;
   const grid = document.getElementById('grid');
   const status = document.getElementById('status');
-  const wantLikes = vidState.sort === 'likes';
+  const wantLikes = vidState.sort === 'likes' || vidState.sort === 'ratio';
   grid.innerHTML = '';
   status.style.display = 'block';
   status.textContent = wantLikes
-    ? '좋아요 수를 불러오는 중입니다... (영상마다 조회하느라 조금 걸려요)'
+    ? '좋아요·구독자 수를 불러오는 중입니다... (영상마다 조회하느라 조금 걸려요)'
     : '영상을 불러오는 중입니다...';
   const q = new URLSearchParams({
     category: state.category, period: state.period,
@@ -392,7 +392,9 @@ function renderVideos() {
   const status = document.getElementById('status');
   grid.className = 'grid' + (state.tab === 'shorts' ? ' shorts' : '');
   const f = vidState.sort;
-  const sorted = applyVidFilters(vidData).sort((a, b) => (b[f] || 0) - (a[f] || 0));
+  // 떡상지수 = 조회수 ÷ 구독자 수 (구독자 정보가 없는 영상은 뒤로)
+  const val = v => f === 'ratio' ? (v.subs ? v.views / v.subs : 0) : (v[f] || 0);
+  const sorted = applyVidFilters(vidData).sort((a, b) => val(b) - val(a));
   grid.innerHTML = '';
   if (!sorted.length && vidData.length) {
     status.style.display = 'block';
@@ -416,7 +418,11 @@ document.getElementById('fClear').onclick = () => {
 function videoCard(v, rank) {
   const el = document.createElement('div');
   el.className = 'card';
-  const likeStr = v.likes ? `<span class="views">👍 ${fmt2(v.likes)}</span>` : '';
+  const likeStr = v.likes ? `<span class="${vidState.sort === 'likes' ? 'views' : ''}">👍 ${fmt2(v.likes)}</span>` : '';
+  const r = v.subs ? v.views / v.subs : 0;
+  const ratioStr = v.subs
+    ? `<span class="${vidState.sort === 'ratio' ? 'views' : ''}">🚀 ${r >= 10 ? Math.round(r) : r.toFixed(1)}배</span><span>구독자 ${fmt2(v.subs)}</span>`
+    : '';
   el.innerHTML = `
     <div style="position:relative">
       <img class="thumb" loading="lazy" alt="">
@@ -427,7 +433,7 @@ function videoCard(v, rank) {
       <div class="title"></div>
       <div class="sub">
         <span class="${vidState.sort === 'views' ? 'views' : ''}">조회수 ${fmt(v.views)}</span>
-        ${likeStr}
+        ${likeStr}${ratioStr}
         <span class="chn"></span><span class="pub"></span>
       </div>
     </div>`;
@@ -793,8 +799,10 @@ function initFoldMenu(menuId, options, stateObj, onPick) {
 initFoldMenu('vidSortMenu', [
   { key: 'views', label: '조회수순', icon: '👁️' },
   { key: 'likes', label: '좋아요순', icon: '👍' },
+  { key: 'ratio', label: '떡상지수 (구독자 대비 조회수)', icon: '🚀' },
 ], vidState, () => {
-  if (vidState.sort === 'likes' && !vidHasLikes) loadVideos();  // 좋아요 데이터 없으면 재요청
+  // 좋아요·구독자 데이터가 아직 없으면 서버에서 보강해 재요청
+  if ((vidState.sort === 'likes' || vidState.sort === 'ratio') && !vidHasLikes) loadVideos();
   else renderVideos();
 });
 
