@@ -19,6 +19,8 @@
   #searchInput { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 13px; color: var(--text); font-size: 13px; width: 230px; }
   #searchInput:focus { outline: none; border-color: var(--accent2); }
   #searchBtn { background: var(--accent); border: none; color: #fff; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #kwSaveBtn, #csvBtn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+  #kwSaveBtn:hover, #csvBtn:hover { border-color: #ffd166; }
   #refreshBtn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
   #refreshBtn:hover { border-color: var(--accent2); }
   #updated { color: var(--muted); font-size: 12px; }
@@ -30,6 +32,10 @@
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip { padding: 6px 13px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: 13px; cursor: pointer; white-space: nowrap; }
   .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  .chip.kw { border-color: #6b5b1e; color: #ffd166; }
+  .chip.kw.active { background: #ffd166; border-color: #ffd166; color: #000; }
+  .chip.kw .kwdel { margin-left: 4px; opacity: .6; }
+  .chip.kw .kwdel:hover { opacity: 1; }
   .filters { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
   .filters input, .filters select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 12.5px; }
   .filters input { width: 160px; }
@@ -48,6 +54,19 @@
   .thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; background: #000; }
   .grid.shorts .thumb { aspect-ratio: 9/13; }
   .rank { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.75); color: #ffd166; font-weight: 800; font-size: 13px; padding: 3px 9px; border-radius: 7px; }
+  .favbtn { position: absolute; top: 8px; right: 8px; z-index: 2; background: rgba(0,0,0,.6); border: none; color: #9aa3b2; font-size: 15px; border-radius: 7px; padding: 3px 9px; cursor: pointer; }
+  .favbtn:hover { color: #ffd166; }
+  .favbtn.on { color: #ffd166; }
+  #kwPanel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; display: none; }
+  #kwPanel.open { display: block; }
+  #kwPanel h3 { font-size: 14px; margin-bottom: 10px; }
+  #kwPanel h3 small { color: var(--muted); font-weight: 400; font-size: 11.5px; margin-left: 6px; }
+  .kwchips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .kwchip { background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 13px; color: var(--text); font-size: 13px; cursor: pointer; }
+  .kwchip:hover { border-color: var(--accent); }
+  .kwchip small { color: var(--muted); margin-left: 5px; font-size: 11px; }
+  .sortbar input { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: 12.5px; width: 150px; }
+  .sortbar input:focus { outline: none; border-color: var(--accent2); }
   .rank.top { background: var(--accent); color: #fff; }
   .len { position: absolute; right: 8px; background: rgba(0,0,0,.8); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 5px; }
   .meta { padding: 10px 12px 12px; }
@@ -145,7 +164,9 @@
   <form id="searchForm">
     <input id="searchInput" type="search" placeholder="유튜브 검색어 입력 (예: AI 광고)">
     <button id="searchBtn" type="submit">🔍 검색</button>
+    <button id="kwSaveBtn" type="button" title="현재 검색어를 관심 키워드로 저장">⭐ 키워드 저장</button>
   </form>
+  <button id="csvBtn" title="현재 목록을 엑셀(CSV)로 저장">⬇ CSV</button>
   <button id="refreshBtn">🔄 새로고침</button>
   <div id="updated"></div>
 </header>
@@ -158,6 +179,7 @@
   <button class="tab" data-tab="x">𝕏 트위터</button>
   <button class="tab" data-tab="threads">🧵 스레드</button>
   <button class="tab" data-tab="tiktok">🎵 틱톡</button>
+  <button class="tab" data-tab="saved">⭐ 보관함</button>
 </nav>
 
 <div class="toolbar" id="toolbar">
@@ -182,12 +204,23 @@
       <option value="1000000">100만 이상</option>
       <option value="5000000">500만 이상</option>
     </select>
+    <select id="fValue" title="구독자 대비 조회수(떡상)나 좋아요율이 높은 영상만 골라 봅니다">
+      <option value="all">가치 필터: 전체</option>
+      <option value="ratio3">🚀 떡상 3배 이상</option>
+      <option value="ratio10">🚀 떡상 10배 이상</option>
+      <option value="like2">👍 좋아요율 2% 이상</option>
+    </select>
     <button id="fClear">필터 해제</button>
+    <button id="kwTrendBtn" title="현재 목록의 제목에서 반복 등장하는 키워드를 뽑아 보여줍니다">🔥 트렌드 키워드</button>
   </div>
 </div>
 
 <main>
   <div id="videoView">
+    <div id="kwPanel">
+      <h3>🔥 지금 목록의 트렌드 키워드 <small>여러 영상 제목에 반복 등장한 단어 · 클릭하면 그 키워드로 검색</small></h3>
+      <div class="kwchips" id="kwChips"></div>
+    </div>
     <div class="status" id="status">불러오는 중...</div>
     <div class="grid" id="grid"></div>
   </div>
@@ -224,6 +257,8 @@
         <div class="sortlist"></div>
       </div>
       <span class="sortcount" id="reelsCount"></span>
+      <input id="reelsInc" type="text" placeholder="🔎 포함 단어">
+      <input id="reelsExc" type="text" placeholder="🚫 제외 단어">
     </div>
     <div class="status" id="reelsStatus">불러오는 중...</div>
     <div class="grid shorts" id="reelsGrid"></div>
@@ -282,9 +317,17 @@
         <div class="sortlist"></div>
       </div>
       <span class="sortcount" id="ttCount"></span>
+      <input id="ttInc" type="text" placeholder="🔎 포함 단어">
+      <input id="ttExc" type="text" placeholder="🚫 제외 단어">
     </div>
     <div class="status" id="ttStatus">불러오는 중...</div>
     <div class="grid shorts" id="ttGrid"></div>
+  </div>
+
+  <div id="savedView" class="ext-section" style="display:none">
+    <p class="note">카드의 ★ 버튼으로 저장한 영상·릴스·틱톡이 여기에 모입니다. 벤치마킹할 콘텐츠를 쌓아두세요. (이 컴퓨터의 브라우저에 저장됩니다)</p>
+    <div class="status" id="savedStatus" style="display:none"></div>
+    <div class="grid" id="savedGrid"></div>
   </div>
 </main>
 
@@ -304,6 +347,83 @@ const CSRF_TOKEN = '__CSRF_TOKEN__';
 const POST_HEADERS = { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF_TOKEN };
 
 const state = { tab: 'youtube', category: '전체', period: 'week', categories: ['전체'], search: '' };
+
+/* ---------- 로컬 저장 헬퍼 (관심 키워드 · 보관함) ---------- */
+const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
+const lsSet = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+/* ---------- 보관함(즐겨찾기) ---------- */
+let favs = lsGet('fav_items', []);
+const isFav = url => favs.some(f => f.url === url);
+function toggleFav(item) {
+  if (isFav(item.url)) favs = favs.filter(f => f.url !== item.url);
+  else favs.push(item);
+  lsSet('fav_items', favs);
+}
+function favButton(el, item) {
+  // 카드의 썸네일 영역(el)에 ★ 버튼을 붙입니다.
+  const b = document.createElement('button');
+  b.className = 'favbtn' + (isFav(item.url) ? ' on' : '');
+  b.textContent = '★';
+  b.title = '보관함에 저장/해제';
+  b.onclick = e => {
+    e.stopPropagation();
+    toggleFav(item);
+    b.classList.toggle('on', isFav(item.url));
+  };
+  el.appendChild(b);
+}
+function renderSaved() {
+  const grid = document.getElementById('savedGrid');
+  const status = document.getElementById('savedStatus');
+  grid.innerHTML = '';
+  if (!favs.length) {
+    status.style.display = 'block';
+    status.textContent = '보관함이 비어 있습니다. 영상 카드의 ★ 버튼을 눌러 저장해 보세요.';
+    return;
+  }
+  status.style.display = 'none';
+  favs.slice().reverse().forEach(it => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `<div style="position:relative"><img class="thumb" loading="lazy" alt=""></div>
+      <div class="meta"><div class="title"></div><div class="sub"><span class="sv"></span></div></div>`;
+    el.querySelector('.thumb').src = it.thumb || '';
+    el.querySelector('.title').textContent = it.title || '';
+    el.querySelector('.sv').textContent = it.sub || '';
+    const del = document.createElement('button');
+    del.className = 'favbtn on';
+    del.textContent = '★';
+    del.title = '보관함에서 제거';
+    del.onclick = e => { e.stopPropagation(); toggleFav(it); renderSaved(); };
+    el.querySelector('div').appendChild(del);
+    el.onclick = () => window.open(it.url, '_blank');
+    grid.appendChild(el);
+  });
+}
+
+/* ---------- 관심 키워드 저장 ---------- */
+const savedKeywords = () => lsGet('kw_saved', []);
+function removeKeyword(kw) {
+  lsSet('kw_saved', savedKeywords().filter(k => k !== kw));
+  renderChips();
+}
+document.getElementById('kwSaveBtn').onclick = () => {
+  const kw = document.getElementById('searchInput').value.trim();
+  if (!kw) { alert('검색창에 저장할 키워드를 먼저 입력하세요.'); return; }
+  const arr = savedKeywords();
+  if (!arr.includes(kw)) { arr.push(kw); lsSet('kw_saved', arr); }
+  renderChips();
+};
+
+/* ---------- 게시일 텍스트 → 경과 일수 (일평균 조회수 계산용) ---------- */
+function ageDays(published) {
+  const m = (published || '').match(/(\d+)(분|시간|일|주|개월|년)\s*전/);
+  if (!m) return 0;
+  const n = +m[1];
+  return { '분': n / 1440, '시간': n / 24, '일': n, '주': n * 7, '개월': n * 30, '년': n * 365 }[m[2]] || 0;
+}
+const dailyViews = v => (v.views || 0) / Math.max(ageDays(v.published), 1);
 
 const fmt = n => {
   if (n >= 1e8) return (n / 1e8).toFixed(1).replace(/\.0$/, '') + '억회';
@@ -334,6 +454,24 @@ function renderChips() {
     };
     box.appendChild(b);
   });
+  // 저장된 관심 키워드 칩 (⭐) — 클릭하면 그 키워드로 검색
+  savedKeywords().forEach(kw => {
+    const b = document.createElement('button');
+    b.className = 'chip kw' + (state.search === kw ? ' active' : '');
+    b.textContent = '⭐ ' + kw;
+    const x = document.createElement('span');
+    x.className = 'kwdel';
+    x.textContent = '✕';
+    x.title = '키워드 삭제';
+    x.onclick = e => { e.stopPropagation(); removeKeyword(kw); };
+    b.appendChild(x);
+    b.onclick = () => {
+      state.search = kw;
+      document.getElementById('searchInput').value = kw;
+      renderChips(); loadVideos();
+    };
+    box.appendChild(b);
+  });
 }
 
 /* ---------- 유튜브/쇼츠 영상 ---------- */
@@ -346,7 +484,7 @@ async function loadVideos(force = false) {
   const seq = ++loadSeq;
   const grid = document.getElementById('grid');
   const status = document.getElementById('status');
-  const wantLikes = vidState.sort === 'likes' || vidState.sort === 'ratio';
+  const wantLikes = vidState.sort === 'likes' || vidState.sort === 'ratio' || filterState.value !== 'all';
   grid.innerHTML = '';
   status.style.display = 'block';
   status.textContent = wantLikes
@@ -368,13 +506,14 @@ async function loadVideos(force = false) {
     if (!vidData.length) { status.style.display = 'block'; status.textContent = '결과가 없습니다.'; return; }
     status.style.display = 'none';
     renderVideos();
+    updateKwPanel();
   } catch (e) {
     if (seq !== loadSeq) return;
     status.textContent = '불러오기에 실패했습니다. 네트워크를 확인해 주세요.';
   }
 }
-/* 클라이언트 필터: 제목·채널명에 대한 포함/제외 단어 + 최소 조회수 */
-const filterState = { inc: '', exc: '', minViews: 0 };
+/* 클라이언트 필터: 제목·채널명에 대한 포함/제외 단어 + 최소 조회수 + 콘텐츠 가치 */
+const filterState = { inc: '', exc: '', minViews: 0, value: 'all' };
 const splitWords = s => s.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
 function applyVidFilters(list) {
   const incs = splitWords(filterState.inc);
@@ -384,6 +523,10 @@ function applyVidFilters(list) {
     if (incs.length && !incs.some(w => text.includes(w))) return false;
     if (excs.some(w => text.includes(w))) return false;
     if ((v.views || 0) < filterState.minViews) return false;
+    // 가치 필터: 떡상 배율(조회수÷구독자) 또는 좋아요율(좋아요÷조회수)
+    if (filterState.value === 'ratio3' && !(v.subs && v.views / v.subs >= 3)) return false;
+    if (filterState.value === 'ratio10' && !(v.subs && v.views / v.subs >= 10)) return false;
+    if (filterState.value === 'like2' && !(v.likes && v.views && v.likes / v.views >= 0.02)) return false;
     return true;
   });
 }
@@ -392,8 +535,10 @@ function renderVideos() {
   const status = document.getElementById('status');
   grid.className = 'grid' + (state.tab === 'shorts' ? ' shorts' : '');
   const f = vidState.sort;
-  // 떡상지수 = 조회수 ÷ 구독자 수 (구독자 정보가 없는 영상은 뒤로)
-  const val = v => f === 'ratio' ? (v.subs ? v.views / v.subs : 0) : (v[f] || 0);
+  // 떡상지수 = 조회수 ÷ 구독자 수 / 일평균 = 조회수 ÷ 경과일 (정보 없는 영상은 뒤로)
+  const val = v => f === 'ratio' ? (v.subs ? v.views / v.subs : 0)
+    : f === 'daily' ? dailyViews(v)
+    : (v[f] || 0);
   const sorted = applyVidFilters(vidData).sort((a, b) => val(b) - val(a));
   grid.innerHTML = '';
   if (!sorted.length && vidData.length) {
@@ -407,14 +552,134 @@ function renderVideos() {
 document.getElementById('fInclude').addEventListener('input', e => { filterState.inc = e.target.value; renderVideos(); });
 document.getElementById('fExclude').addEventListener('input', e => { filterState.exc = e.target.value; renderVideos(); });
 document.getElementById('fMinViews').addEventListener('change', e => { filterState.minViews = Number(e.target.value); renderVideos(); });
+document.getElementById('fValue').addEventListener('change', e => {
+  filterState.value = e.target.value;
+  // 떡상/좋아요율 판정에는 구독자·좋아요 데이터가 필요 → 없으면 서버에서 보강해 재요청
+  if (filterState.value !== 'all' && !vidHasLikes) loadVideos();
+  else renderVideos();
+});
 document.getElementById('fClear').onclick = () => {
   filterState.inc = filterState.exc = '';
   filterState.minViews = 0;
+  filterState.value = 'all';
   document.getElementById('fInclude').value = '';
   document.getElementById('fExclude').value = '';
   document.getElementById('fMinViews').value = '0';
+  document.getElementById('fValue').value = 'all';
   renderVideos();
 };
+
+/* ---------- 🔥 트렌드 키워드 분석 ---------- */
+// 제목에서 의미 없는 조사·상투어를 뺀 뒤, 여러 영상에 반복 등장하는 단어를 추립니다.
+const KW_STOP = new Set(['영상','진짜','완전','오늘','이번','정말','레전드','근데','하는','있는','없는',
+  '합니다','했다','했는데','하기','그리고','무엇','어떤','에서','부터','까지','하고','인가','인가요',
+  '그냥','바로','함께','최초','충격','결국','드디어','순간','모든','이유','방법','후기','공개','논란',
+  'the','and','for','with','you','this','that','how','what','shorts','ep','vs','feat','ft','full']);
+function computeKeywords(list) {
+  const score = {};
+  list.forEach(v => {
+    const words = new Set((v.title || '').toLowerCase()
+      .replace(/[^0-9a-z가-힣\s]/g, ' ').split(/\s+/)
+      .filter(w => w.length >= 2 && !KW_STOP.has(w) && !/^\d+$/.test(w)));
+    words.forEach(w => {
+      if (!score[w]) score[w] = { n: 0, views: 0 };
+      score[w].n++;
+      score[w].views += v.views || 0;
+    });
+  });
+  return Object.entries(score)
+    .filter(([, s]) => s.n >= 2)                      // 2개 이상 영상에서 등장한 단어만
+    .sort((a, b) => b[1].n - a[1].n || b[1].views - a[1].views)
+    .slice(0, 20);
+}
+function updateKwPanel() {
+  const panel = document.getElementById('kwPanel');
+  if (!panel.classList.contains('open')) return;
+  const box = document.getElementById('kwChips');
+  box.innerHTML = '';
+  const kws = computeKeywords(applyVidFilters(vidData));
+  if (!kws.length) {
+    box.innerHTML = '<span style="color:var(--muted);font-size:13px">반복 등장하는 키워드가 아직 없습니다. 목록이 로드된 뒤 다시 열어보세요.</span>';
+    return;
+  }
+  kws.forEach(([w, s]) => {
+    const b = document.createElement('button');
+    b.className = 'kwchip';
+    b.textContent = w;
+    const small = document.createElement('small');
+    small.textContent = `${s.n}개 · ${fmt2(s.views)}회`;
+    b.appendChild(small);
+    b.onclick = () => {
+      state.search = w;
+      document.getElementById('searchInput').value = w;
+      renderChips(); loadVideos();
+    };
+    box.appendChild(b);
+  });
+}
+document.getElementById('kwTrendBtn').onclick = () => {
+  document.getElementById('kwPanel').classList.toggle('open');
+  updateKwPanel();
+};
+
+/* ---------- ⬇ CSV 내보내기 ---------- */
+function downloadCsv(rows, name) {
+  const csv = '\uFEFF' + rows.map(r => r.map(c => '"' + String(c ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'trend_' + name + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+document.getElementById('csvBtn').onclick = () => {
+  if (state.tab === 'youtube' || state.tab === 'shorts') {
+    const f = vidState.sort;
+    const val = v => f === 'ratio' ? (v.subs ? v.views / v.subs : 0) : f === 'daily' ? dailyViews(v) : (v[f] || 0);
+    const sorted = applyVidFilters(vidData).sort((a, b) => val(b) - val(a));
+    const rows = [['순위', '제목', '채널', '조회수', '좋아요', '구독자', '떡상지수', '일평균조회수', '게시일', '링크']];
+    sorted.forEach((v, i) => rows.push([i + 1, v.title, v.channel, v.views, v.likes || '', v.subs || '',
+      v.subs ? (v.views / v.subs).toFixed(2) : '', ageDays(v.published) > 0 ? Math.round(dailyViews(v)) : '',
+      v.published, 'https://www.youtube.com/watch?v=' + v.id]));
+    downloadCsv(rows, state.tab);
+  } else if (state.tab === 'reels') {
+    const rows = [['순위', '계정', '제목', '조회수', '좋아요', '댓글', '링크']];
+    applyExtFilters(reelsData, 'reels').slice().sort((a, b) => (b[reelsState.sort] || 0) - (a[reelsState.sort] || 0))
+      .forEach((r, i) => rows.push([i + 1, r.account, r.title, r.views, r.likes, r.comments, r.url]));
+    downloadCsv(rows, 'reels');
+  } else if (state.tab === 'tiktok') {
+    const rows = [['순위', '계정', '제목', '조회수', '좋아요', '댓글', '링크']];
+    applyExtFilters(tiktokData, 'tiktok').slice().sort((a, b) => (b[tiktokState.sort] || 0) - (a[tiktokState.sort] || 0))
+      .forEach((t, i) => rows.push([i + 1, t.account, t.title, t.views, t.likes, t.comments, t.url]));
+    downloadCsv(rows, 'tiktok');
+  } else if (state.tab === 'x' || state.tab === 'threads') {
+    const f = sortField(state.tab);
+    const rows = [['순위', '계정', '내용', '좋아요', '댓글', '리포스트', '조회수', '링크']];
+    social[state.tab].data.slice().sort((a, b) => (b[f] || 0) - (a[f] || 0))
+      .forEach((p, i) => rows.push([i + 1, p.account, p.text, p.likes, p.replies,
+        state.tab === 'x' ? p.retweets : p.reposts, p.views || '', p.url]));
+    downloadCsv(rows, state.tab);
+  } else {
+    alert('이 탭은 CSV 내보내기를 지원하지 않습니다. (유튜브·쇼츠·릴스·틱톡·트위터·스레드 탭에서 사용하세요)');
+  }
+};
+
+/* ---------- 릴스·틱톡 탭 필터 ---------- */
+const extFilter = { reels: { inc: '', exc: '' }, tiktok: { inc: '', exc: '' } };
+function applyExtFilters(list, kind) {
+  const incs = splitWords(extFilter[kind].inc);
+  const excs = splitWords(extFilter[kind].exc);
+  if (!incs.length && !excs.length) return list;
+  return list.filter(it => {
+    const text = ((it.title || '') + ' ' + (it.account || '')).toLowerCase();
+    if (incs.length && !incs.some(w => text.includes(w))) return false;
+    if (excs.some(w => text.includes(w))) return false;
+    return true;
+  });
+}
+document.getElementById('reelsInc').addEventListener('input', e => { extFilter.reels.inc = e.target.value; renderReels(); });
+document.getElementById('reelsExc').addEventListener('input', e => { extFilter.reels.exc = e.target.value; renderReels(); });
+document.getElementById('ttInc').addEventListener('input', e => { extFilter.tiktok.inc = e.target.value; renderTikTok(); });
+document.getElementById('ttExc').addEventListener('input', e => { extFilter.tiktok.exc = e.target.value; renderTikTok(); });
 function videoCard(v, rank) {
   const el = document.createElement('div');
   el.className = 'card';
@@ -422,6 +687,9 @@ function videoCard(v, rank) {
   const r = v.subs ? v.views / v.subs : 0;
   const ratioStr = v.subs
     ? `<span class="${vidState.sort === 'ratio' ? 'views' : ''}">🚀 ${r >= 10 ? Math.round(r) : r.toFixed(1)}배</span><span>구독자 ${fmt2(v.subs)}</span>`
+    : '';
+  const dailyStr = vidState.sort === 'daily' && ageDays(v.published) > 0
+    ? `<span class="views">⚡ 일 ${fmt2(Math.round(dailyViews(v)))}회</span>`
     : '';
   el.innerHTML = `
     <div style="position:relative">
@@ -433,7 +701,7 @@ function videoCard(v, rank) {
       <div class="title"></div>
       <div class="sub">
         <span class="${vidState.sort === 'views' ? 'views' : ''}">조회수 ${fmt(v.views)}</span>
-        ${likeStr}${ratioStr}
+        ${likeStr}${ratioStr}${dailyStr}
         <span class="chn"></span><span class="pub"></span>
       </div>
     </div>`;
@@ -442,6 +710,11 @@ function videoCard(v, rank) {
   el.querySelector('.chn').textContent = v.channel;
   el.querySelector('.pub').textContent = v.published || '';
   if (v.length) el.querySelector('.len').textContent = v.length;
+  favButton(el.querySelector('div'), {
+    url: 'https://www.youtube.com/watch?v=' + v.id,
+    title: v.title, thumb: v.thumbnail,
+    sub: '▶ ' + v.channel + ' · 조회수 ' + fmt(v.views),
+  });
   el.onclick = () => openPlayer(v.id, state.tab === 'shorts');
   return el;
 }
@@ -550,7 +823,7 @@ function renderReels() {
   const grid = document.getElementById('reelsGrid');
   const f = reelsState.sort;
   const label = { views: '조회수', likes: '좋아요', comments: '댓글' };
-  const sorted = reelsData.slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
+  const sorted = applyExtFilters(reelsData, 'reels').slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
   grid.innerHTML = '';
   sorted.forEach((r, i) => {
     const el = document.createElement('div');
@@ -571,6 +844,11 @@ function renderReels() {
       </div>`;
     el.querySelector('.title').textContent = r.title;
     el.querySelector('.acct').textContent = '@' + r.account;
+    favButton(el.querySelector('div'), {
+      url: r.url, title: r.title,
+      thumb: '/api/img?u=' + encodeURIComponent(r.thumbnail),
+      sub: '📸 @' + r.account + ' · 조회수 ' + fmt2(r.views),
+    });
     el.onclick = () => window.open(r.url, '_blank');
     grid.appendChild(el);
   });
@@ -800,6 +1078,7 @@ initFoldMenu('vidSortMenu', [
   { key: 'views', label: '조회수순', icon: '👁️' },
   { key: 'likes', label: '좋아요순', icon: '👍' },
   { key: 'ratio', label: '떡상지수 (구독자 대비 조회수)', icon: '🚀' },
+  { key: 'daily', label: '일평균 조회수 (화제성)', icon: '⚡' },
 ], vidState, () => {
   // 좋아요·구독자 데이터가 아직 없으면 서버에서 보강해 재요청
   if ((vidState.sort === 'likes' || vidState.sort === 'ratio') && !vidHasLikes) loadVideos();
@@ -843,7 +1122,7 @@ function renderTikTok() {
   const grid = document.getElementById('ttGrid');
   const f = tiktokState.sort;
   const label = { views: '조회수', likes: '좋아요', comments: '댓글' };
-  const sorted = tiktokData.slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
+  const sorted = applyExtFilters(tiktokData, 'tiktok').slice().sort((a, b) => (b[f] || 0) - (a[f] || 0));
   grid.innerHTML = '';
   sorted.forEach((t, i) => {
     const el = document.createElement('div');
@@ -864,6 +1143,11 @@ function renderTikTok() {
       </div>`;
     el.querySelector('.title').textContent = t.title;
     el.querySelector('.acct').textContent = '@' + t.account;
+    favButton(el.querySelector('div'), {
+      url: t.url, title: t.title,
+      thumb: '/api/img?u=' + encodeURIComponent(t.thumbnail),
+      sub: '🎵 @' + t.account + ' · 조회수 ' + fmt2(t.views),
+    });
     el.onclick = () => window.open(t.url, '_blank');
     grid.appendChild(el);
   });
@@ -916,12 +1200,14 @@ document.getElementById('tabs').onclick = e => {
   document.getElementById('xView').style.display = state.tab === 'x' ? 'block' : 'none';
   document.getElementById('threadsView').style.display = state.tab === 'threads' ? 'block' : 'none';
   document.getElementById('tiktokView').style.display = state.tab === 'tiktok' ? 'block' : 'none';
+  document.getElementById('savedView').style.display = state.tab === 'saved' ? 'block' : 'none';
   if (isVideo) loadVideos();
   else if (state.tab === 'ai') loadAI();
   else if (state.tab === 'reels') loadReels();
   else if (state.tab === 'x') loadSocial('x');
   else if (state.tab === 'threads') loadSocial('threads');
   else if (state.tab === 'tiktok') loadTikTok();
+  else if (state.tab === 'saved') renderSaved();
 };
 document.getElementById('periods').onclick = e => {
   const btn = e.target.closest('.period');
@@ -940,7 +1226,7 @@ document.getElementById('searchForm').addEventListener('submit', e => {
     state.tab = 'youtube';
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'youtube'));
     document.getElementById('toolbar').style.display = 'flex';
-    ['videoView','aiView','reelsView','xView','threadsView','tiktokView'].forEach(id =>
+    ['videoView','aiView','reelsView','xView','threadsView','tiktokView','savedView'].forEach(id =>
       document.getElementById(id).style.display = id === 'videoView' ? 'block' : 'none');
   }
   renderChips();
