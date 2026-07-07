@@ -48,11 +48,35 @@ CATEGORIES = {
     "영화/드라마": "영화 드라마 리뷰",
     "테크/IT": "테크 리뷰",
     "지식/교육": "지식 교양",
+    "자기계발": "자기계발 동기부여",
     "여행": "여행",
     "동물": "강아지 고양이",
 }
+# 해외 지역 선택 시 같은 카테고리를 현지 언어 검색어로 바꿔 현지 콘텐츠를 가져옵니다.
+CATEGORIES_I18N = {
+    "US": {
+        "먹방": "mukbang", "뷰티/패션": "beauty makeup fashion", "브이로그": "vlog",
+        "예능/코미디": "funny comedy videos", "영화/드라마": "movie review",
+        "테크/IT": "tech review", "지식/교육": "educational explained",
+        "자기계발": "self improvement motivation productivity",
+        "여행": "travel vlog", "동물": "dogs cats",
+    },
+    "JP": {
+        "먹방": "モッパン 大食い", "뷰티/패션": "メイク 美容", "브이로그": "vlog 日常",
+        "예능/코미디": "お笑い 面白い", "영화/드라마": "映画 レビュー",
+        "테크/IT": "ガジェット レビュー", "지식/교육": "教養 解説",
+        "자기계발": "自己啓発 モチベーション", "여행": "旅行", "동물": "犬 猫",
+    },
+}
+REGIONS = ("KR", "US", "JP")
 # "전체" 탭은 아래 카테고리들을 합쳐 조회수순으로 재정렬
-ALL_MERGE = ["먹방", "브이로그", "예능/코미디", "뷰티/패션", "영화/드라마", "여행"]
+ALL_MERGE = ["먹방", "브이로그", "예능/코미디", "뷰티/패션", "영화/드라마", "자기계발", "여행"]
+
+
+def category_query(category: str, region: str) -> str:
+    if region != "KR" and category in CATEGORIES_I18N.get(region, {}):
+        return CATEGORIES_I18N[region][category]
+    return CATEGORIES.get(category, category)
 
 # 검색 필터 protobuf: 업로드 날짜 (2=오늘, 3=이번 주, 4=이번 달)
 # "어제(yesterday)"는 유튜브에 전용 필터가 없어 '이번 주'로 받은 뒤
@@ -66,6 +90,10 @@ PERIOD_EXCLUDE = {
     "week": ("주 전", "개월 전", "년 전"),
     "month": ("개월 전", "년 전"),
 }
+
+# ---------------------------------------------------------------- 유튜브 채널 추적
+YT_CHANNELS_FILE = os.path.join(BASE_DIR, "yt_channels.json")
+DEFAULT_YT_CHANNELS = []  # 화면에서 벤치마킹할 채널 핸들(@이름)을 직접 추가
 
 # ---------------------------------------------------------------- 인스타그램 릴스
 IG_APP_ID = "936619743392459"  # instagram.com 웹이 쓰는 공개 앱 ID
@@ -150,8 +178,15 @@ def http_json(url: str, payload=None, headers=None, timeout=15):
 
 
 def parse_view_count(text: str) -> int:
-    digits = re.sub(r"[^\d]", "", text or "")
-    return int(digits) if digits else 0
+    """'조회수 1,234,567회'와 채널 페이지의 축약형 '조회수 12만회' 모두 숫자로 변환합니다."""
+    m = re.search(r"([0-9][0-9,.]*)\s*(억|만|천)?", text or "")
+    if not m:
+        return 0
+    try:
+        num = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return 0
+    return int(num * SUB_UNITS.get(m.group(2) or "", 1))
 
 
 def cached(key, force, fetch_fn):
@@ -165,6 +200,59 @@ def cached(key, force, fetch_fn):
     with _cache_lock:
         _cache[key] = (fetched_at, result)
     return result, fetched_at
+
+
+# ================================================================ 조회 히스토리 (추이 분석)
+# 날짜별로 각 조회 키(카테고리/검색어×기간)의 영상 순위·조회수를 기록해,
+# 다음 날부터 순위 변동(▲▼)과 신규 진입(NEW)을 표시할 수 있게 합니다.
+HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
+HISTORY_DAYS = 14  # 이 일수보다 오래된 기록은 자동 삭제
+_hist_lock = threading.Lock()
+
+
+def _load_history():
+    try:
+        with open(HISTORY_FILE) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def hist_key(category, period, shorts, query, region):
+    return "|".join([query or category, period, "s" if shorts else "v", region])
+
+
+def annotate_and_record(key, videos):
+    """전날 스냅샷과 비교해 prevRank/prevViews/isNew를 붙이고, 오늘 스냅샷을 저장합니다."""
+    today = time.strftime("%Y-%m-%d")
+    with _hist_lock:
+        hist = _load_history()
+        entry = hist.setdefault(key, {})
+        prev = None
+        for d in sorted(entry.keys(), reverse=True):
+            if d < today:
+                prev = entry[d]
+                break
+        for v in videos:
+            p = (prev or {}).get(v["id"])
+            v.pop("prevRank", None)
+            v.pop("prevViews", None)
+            v.pop("isNew", None)
+            if p:
+                v["prevRank"] = p["rank"]
+                v["prevViews"] = p["views"]
+            elif prev is not None:
+                v["isNew"] = True  # 비교할 전날 기록이 있는데 그 안에 없던 영상
+        entry[today] = {v["id"]: {"views": v["views"], "rank": i + 1}
+                        for i, v in enumerate(videos[:60])}
+        cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - HISTORY_DAYS * 86400))
+        for d in [d for d in entry if d < cutoff]:
+            del entry[d]
+        try:
+            with open(HISTORY_FILE, "w") as f:
+                json.dump(hist, f, ensure_ascii=False)
+        except OSError:
+            pass
 
 
 # ================================================================ 유튜브
@@ -193,12 +281,14 @@ def extract_videos(node, out):
             extract_videos(item, out)
 
 
-def yt_search(query: str, period: str, shorts: bool):
+def yt_search(query: str, period: str, shorts: bool, region: str = "KR"):
+    # hl은 ko로 고정: 게시일("N일 전")·조회수 텍스트 파싱을 한국어 형식으로 유지하면서
+    # gl(지역)만 바꿔 해당 국가의 인기 결과를 받습니다.
     payload = {
         "context": {"client": {
             "clientName": "WEB",
             "clientVersion": "2.20250624.01.00",
-            "hl": "ko", "gl": "KR",
+            "hl": "ko", "gl": region,
         }},
         "query": query,
         "params": build_search_params(period, shorts),
@@ -263,9 +353,9 @@ def enrich_likes(videos, limit=45):
     return videos
 
 
-def merge_yt_searches(queries, period, shorts):
+def merge_yt_searches(queries, period, shorts, region="KR"):
     with ThreadPoolExecutor(max_workers=6) as pool:
-        results = pool.map(lambda q: yt_search(q, period, shorts), queries)
+        results = pool.map(lambda q: yt_search(q, period, shorts, region), queries)
     merged, seen = [], set()
     for chunk in results:
         for v in chunk:
@@ -276,21 +366,22 @@ def merge_yt_searches(queries, period, shorts):
     return merged
 
 
-def get_videos(category: str, period: str, shorts: bool, force: bool, enrich: bool = False, query: str = ""):
+def get_videos(category: str, period: str, shorts: bool, force: bool,
+               enrich: bool = False, query: str = "", region: str = "KR"):
     def fetch():
         if query:
             queries = [query]
         elif category == "전체":
-            queries = [CATEGORIES[c] for c in ALL_MERGE]
+            queries = [category_query(c, region) for c in ALL_MERGE]
         elif category == "AI":
             queries = AI_YT_QUERIES
         else:
-            queries = [CATEGORIES.get(category, category)]
-        vids = merge_yt_searches(queries, period, shorts)
+            queries = [category_query(category, region)]
+        vids = merge_yt_searches(queries, period, shorts, region)
         if enrich:
             enrich_likes(vids)
         return vids
-    return cached(("yt", query or category, period, shorts, enrich), force, fetch)
+    return cached(("yt", query or category, period, shorts, enrich, region), force, fetch)
 
 
 # ================================================================ 인스타그램 릴스
@@ -316,7 +407,87 @@ ACCOUNT_SOURCES = {
     "x": (X_ACCOUNTS_FILE, DEFAULT_X_ACCOUNTS),
     "threads": (THREADS_ACCOUNTS_FILE, DEFAULT_THREADS_ACCOUNTS),
     "tiktok": (TIKTOK_ACCOUNTS_FILE, DEFAULT_TIKTOK_ACCOUNTS),
+    "channels": (YT_CHANNELS_FILE, DEFAULT_YT_CHANNELS),
 }
+
+
+# ================================================================ 유튜브 채널 추적
+def fetch_channel_videos(handle: str):
+    """채널 페이지(@핸들/videos)의 ytInitialData에서 최신 영상을 추출합니다."""
+    h = handle.lstrip("@")
+    try:
+        _, body = http_get("https://www.youtube.com/@%s/videos?hl=ko" % quote(h), timeout=12)
+        s = body.decode("utf-8", "ignore")
+        m = re.search(r"var ytInitialData = (\{.*?\});</script>", s, re.S)
+        if not m:
+            return []
+        data = json.loads(m.group(1))
+    except Exception:
+        return []
+    vids = []
+    extract_videos(data, vids)
+    seen, out = set(), []
+    for v in vids:
+        if v["id"] and v["id"] not in seen:
+            seen.add(v["id"])
+            v["channel"] = v["channel"] or "@" + h
+            v["account"] = h
+            out.append(v)
+    return out[:15]
+
+
+def get_channels(force: bool):
+    accounts = load_accounts(YT_CHANNELS_FILE, DEFAULT_YT_CHANNELS)
+
+    def fetch():
+        if not accounts:
+            return []
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = pool.map(fetch_channel_videos, accounts)
+        return [v for chunk in results for v in chunk]
+    vids, fetched_at = cached(("ytch", tuple(accounts)), force, fetch)
+    return vids, accounts, fetched_at
+
+
+# ================================================================ 유튜브 인기 댓글
+def fetch_comments(video_id: str, limit: int = 6):
+    """영상의 인기 댓글 상위 몇 개를 가져옵니다 (2단계: 댓글 섹션 토큰 → 댓글 조회)."""
+    client = {"context": {"client": {
+        "clientName": "WEB", "clientVersion": "2.20250624.01.00", "hl": "ko", "gl": "KR"}}}
+    try:
+        _, body = http_get("https://www.youtube.com/youtubei/v1/next",
+                           payload={**client, "videoId": video_id}, timeout=10)
+        s = body.decode("utf-8", "ignore")
+        idx = s.find('"comment-item-section"')
+        if idx == -1:
+            return []
+        tokens = re.findall(r'"token":\s*"([^"]+)"', s[max(0, idx - 6000):idx])
+        if not tokens:
+            return []
+        data = http_json("https://www.youtube.com/youtubei/v1/next",
+                         payload={**client, "continuation": tokens[-1]}, timeout=10)
+    except Exception:
+        return []
+    out = []
+
+    def walk(o):
+        if isinstance(o, dict):
+            c = o.get("commentEntityPayload")
+            if isinstance(c, dict):
+                text = (((c.get("properties") or {}).get("content") or {}).get("content") or "").strip()
+                if text:
+                    out.append({
+                        "text": text[:300],
+                        "author": (c.get("author") or {}).get("displayName", ""),
+                        "likes": ((c.get("toolbar") or {}).get("likeCountNotliked") or "").strip(),
+                    })
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(data)
+    return out[:limit]
 
 
 def fetch_ig_reels(username: str):
@@ -726,11 +897,29 @@ class Handler(BaseHTTPRequestHandler):
             shorts = qs.get("shorts", ["0"])[0] == "1"
             enrich = qs.get("enrich", ["0"])[0] == "1"
             query = qs.get("q", [""])[0].strip()
+            region = qs.get("region", ["KR"])[0]
+            if region not in REGIONS:
+                region = "KR"
             if not query and category not in ("전체", "AI") and category not in CATEGORIES:
                 self._send(400, {"error": "unknown category"})
                 return
-            videos, fetched_at = get_videos(category, period, shorts, force, enrich, query)
+            videos, fetched_at = get_videos(category, period, shorts, force, enrich, query, region)
+            annotate_and_record(hist_key(category, period, shorts, query, region), videos)
             self._send(200, {"videos": videos[:60], "fetchedAt": fetched_at})
+            return
+
+        if parsed.path == "/api/channels":
+            vids, accounts, fetched_at = get_channels(force)
+            self._send(200, {"videos": vids, "accounts": accounts, "fetchedAt": fetched_at})
+            return
+
+        if parsed.path == "/api/comments":
+            vid = qs.get("id", [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_-]{5,20}", vid):
+                self._send(400, {"error": "bad video id"})
+                return
+            comments, _ = cached(("cmt", vid), False, lambda: fetch_comments(vid))
+            self._send(200, {"comments": comments})
             return
 
         if parsed.path == "/api/categories":
@@ -799,8 +988,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(403, {"error": "invalid csrf token"})
             return
         parsed = urlparse(self.path)
-        # /api/{reels|x|threads|tiktok}/accounts — 구독 계정 추가/삭제
-        m = re.match(r"^/api/(reels|x|threads|tiktok)/accounts$", parsed.path)
+        # /api/{reels|x|threads|tiktok|channels}/accounts — 구독 계정/채널 추가/삭제
+        m = re.match(r"^/api/(reels|x|threads|tiktok|channels)/accounts$", parsed.path)
         if m:
             source = m.group(1)
             path, defaults = ACCOUNT_SOURCES[source]

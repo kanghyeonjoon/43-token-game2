@@ -43,6 +43,19 @@
   .filters button { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; color: var(--muted); font-size: 12.5px; cursor: pointer; }
   .filters button:hover { border-color: var(--accent); color: var(--text); }
   .periods { display: flex; gap: 4px; margin-left: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  #regionSel { margin-left: auto; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; color: var(--text); font-size: 13px; cursor: pointer; }
+  #regionSel ~ .periods { margin-left: 0; }
+  .delta { font-size: 11px; font-weight: 800; margin-left: 4px; }
+  .delta.up { color: #4dff88; }
+  .delta.down { color: #ff6b6b; }
+  .delta.new { color: #ffd166; }
+  #alertBar { display: none; gap: 8px; flex-wrap: wrap; padding: 10px 24px 0; }
+  #alertBar button { background: rgba(255,209,102,.12); border: 1px solid #6b5b1e; color: #ffd166; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #alertBar button:hover { background: rgba(255,209,102,.22); }
+  #cmtBox { margin-top: 12px; max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .cmt { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px; font-size: 13px; line-height: 1.5; }
+  .cmt .chead { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+  .cmt .chead b { color: var(--text); }
   .period { padding: 5px 12px; border-radius: 8px; background: transparent; border: none; color: var(--muted); font-size: 13px; cursor: pointer; }
   .period.active { background: var(--accent2); color: #fff; font-weight: 700; }
 
@@ -179,11 +192,18 @@
   <button class="tab" data-tab="x">𝕏 트위터</button>
   <button class="tab" data-tab="threads">🧵 스레드</button>
   <button class="tab" data-tab="tiktok">🎵 틱톡</button>
+  <button class="tab" data-tab="channels">📺 채널</button>
   <button class="tab" data-tab="saved">⭐ 보관함</button>
 </nav>
+<div id="alertBar"></div>
 
 <div class="toolbar" id="toolbar">
   <div class="chips" id="chips"></div>
+  <select id="regionSel" title="국가를 바꾸면 해당 국가의 인기 콘텐츠를 현지 검색어로 가져옵니다">
+    <option value="KR">🇰🇷 한국</option>
+    <option value="US">🇺🇸 미국</option>
+    <option value="JP">🇯🇵 일본</option>
+  </select>
   <div class="periods" id="periods">
     <button class="period" data-period="day">오늘</button>
     <button class="period" data-period="yesterday">어제</button>
@@ -203,6 +223,12 @@
       <option value="500000">50만 이상</option>
       <option value="1000000">100만 이상</option>
       <option value="5000000">500만 이상</option>
+    </select>
+    <select id="fLen" title="영상 길이로 걸러 봅니다">
+      <option value="all">길이 전체</option>
+      <option value="short">1분 미만</option>
+      <option value="mid">1~10분</option>
+      <option value="long">10분 이상</option>
     </select>
     <select id="fValue" title="구독자 대비 조회수(떡상)나 좋아요율이 높은 영상만 골라 봅니다">
       <option value="all">가치 필터: 전체</option>
@@ -324,6 +350,25 @@
     <div class="grid shorts" id="ttGrid"></div>
   </div>
 
+  <div id="channelsView" class="ext-section" style="display:none">
+    <p class="note">벤치마킹할 유튜브 채널을 등록하면 각 채널의 최신 영상을 모아 보여줍니다. <b>"채널 평균 대비" 정렬</b>을 쓰면 그 채널의 평소 성적보다 유난히 터진 영상(=포맷이나 소재가 먹힌 영상)이 위로 옵니다. 채널 주소의 @핸들을 입력하세요 (예: youtube.com/<b>@침착맨</b> → 침착맨).</p>
+    <h2 style="font-size:16px;margin-bottom:10px">📺 추적 채널</h2>
+    <div class="acc-chips" id="chChips"></div>
+    <div class="addbar">
+      <input id="chInput" type="text" placeholder="유튜브 채널 핸들 (@ 없이, 예: 침착맨)">
+      <button id="chAdd">채널 추가</button>
+    </div>
+    <div class="sortbar" style="margin-top:20px">
+      <div class="sortmenu" id="chSortMenu">
+        <button class="sorttoggle">정렬: <span class="curlabel">채널 평균 대비</span> <span class="caret">▼</span></button>
+        <div class="sortlist"></div>
+      </div>
+      <span class="sortcount" id="chCount"></span>
+    </div>
+    <div class="status" id="chStatus" style="display:none"></div>
+    <div class="grid" id="chGrid"></div>
+  </div>
+
   <div id="savedView" class="ext-section" style="display:none">
     <p class="note">카드의 ★ 버튼으로 저장한 영상·릴스·틱톡이 여기에 모입니다. 벤치마킹할 콘텐츠를 쌓아두세요. (이 컴퓨터의 브라우저에 저장됩니다)</p>
     <div class="status" id="savedStatus" style="display:none"></div>
@@ -338,6 +383,7 @@
       <a id="openExternal" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>
       <button id="closeModal">닫기</button>
     </div>
+    <div id="cmtBox"></div>
   </div>
 </div>
 
@@ -346,7 +392,7 @@
 const CSRF_TOKEN = '__CSRF_TOKEN__';
 const POST_HEADERS = { 'Content-Type': 'application/json', 'X-Csrf-Token': CSRF_TOKEN };
 
-const state = { tab: 'youtube', category: '전체', period: 'week', categories: ['전체'], search: '' };
+const state = { tab: 'youtube', category: '전체', period: 'week', categories: ['전체'], search: '', region: 'KR' };
 
 /* ---------- 로컬 저장 헬퍼 (관심 키워드 · 보관함) ---------- */
 const lsGet = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } };
@@ -493,7 +539,7 @@ async function loadVideos(force = false) {
   const q = new URLSearchParams({
     category: state.category, period: state.period,
     shorts: state.tab === 'shorts' ? '1' : '0', force: force ? '1' : '0',
-    enrich: wantLikes ? '1' : '0', q: state.search
+    enrich: wantLikes ? '1' : '0', q: state.search, region: state.region
   });
   try {
     const res = await fetch('/api/videos?' + q);
@@ -513,8 +559,15 @@ async function loadVideos(force = false) {
   }
 }
 /* 클라이언트 필터: 제목·채널명에 대한 포함/제외 단어 + 최소 조회수 + 콘텐츠 가치 */
-const filterState = { inc: '', exc: '', minViews: 0, value: 'all' };
+const filterState = { inc: '', exc: '', minViews: 0, value: 'all', len: 'all' };
 const splitWords = s => s.split(',').map(w => w.trim().toLowerCase()).filter(Boolean);
+// "12:34" / "1:02:11" 형태의 길이 텍스트 → 초
+function lenSeconds(t) {
+  if (!t) return 0;
+  const p = t.split(':').map(Number);
+  if (p.some(isNaN)) return 0;
+  return p.reduce((a, b) => a * 60 + b, 0);
+}
 function applyVidFilters(list) {
   const incs = splitWords(filterState.inc);
   const excs = splitWords(filterState.exc);
@@ -523,6 +576,13 @@ function applyVidFilters(list) {
     if (incs.length && !incs.some(w => text.includes(w))) return false;
     if (excs.some(w => text.includes(w))) return false;
     if ((v.views || 0) < filterState.minViews) return false;
+    // 길이 필터
+    if (filterState.len !== 'all') {
+      const sec = lenSeconds(v.length);
+      if (filterState.len === 'short' && !(sec > 0 && sec < 60)) return false;
+      if (filterState.len === 'mid' && !(sec >= 60 && sec < 600)) return false;
+      if (filterState.len === 'long' && sec < 600) return false;
+    }
     // 가치 필터: 떡상 배율(조회수÷구독자) 또는 좋아요율(좋아요÷조회수)
     if (filterState.value === 'ratio3' && !(v.subs && v.views / v.subs >= 3)) return false;
     if (filterState.value === 'ratio10' && !(v.subs && v.views / v.subs >= 10)) return false;
@@ -552,6 +612,8 @@ function renderVideos() {
 document.getElementById('fInclude').addEventListener('input', e => { filterState.inc = e.target.value; renderVideos(); });
 document.getElementById('fExclude').addEventListener('input', e => { filterState.exc = e.target.value; renderVideos(); });
 document.getElementById('fMinViews').addEventListener('change', e => { filterState.minViews = Number(e.target.value); renderVideos(); });
+document.getElementById('fLen').addEventListener('change', e => { filterState.len = e.target.value; renderVideos(); });
+document.getElementById('regionSel').addEventListener('change', e => { state.region = e.target.value; loadVideos(); });
 document.getElementById('fValue').addEventListener('change', e => {
   filterState.value = e.target.value;
   // 떡상/좋아요율 판정에는 구독자·좋아요 데이터가 필요 → 없으면 서버에서 보강해 재요청
@@ -562,10 +624,12 @@ document.getElementById('fClear').onclick = () => {
   filterState.inc = filterState.exc = '';
   filterState.minViews = 0;
   filterState.value = 'all';
+  filterState.len = 'all';
   document.getElementById('fInclude').value = '';
   document.getElementById('fExclude').value = '';
   document.getElementById('fMinViews').value = '0';
   document.getElementById('fValue').value = 'all';
+  document.getElementById('fLen').value = 'all';
   renderVideos();
 };
 
@@ -582,9 +646,10 @@ function computeKeywords(list) {
       .replace(/[^0-9a-z가-힣\s]/g, ' ').split(/\s+/)
       .filter(w => w.length >= 2 && !KW_STOP.has(w) && !/^\d+$/.test(w)));
     words.forEach(w => {
-      if (!score[w]) score[w] = { n: 0, views: 0 };
+      if (!score[w]) score[w] = { n: 0, views: 0, newN: 0 };
       score[w].n++;
       score[w].views += v.views || 0;
+      if (v.isNew) score[w].newN++;
     });
   });
   return Object.entries(score)
@@ -605,7 +670,8 @@ function updateKwPanel() {
   kws.forEach(([w, s]) => {
     const b = document.createElement('button');
     b.className = 'kwchip';
-    b.textContent = w;
+    // 이 키워드의 영상 60% 이상이 전날 기록에 없던 신규면 '뜨는 중' 표시
+    b.textContent = (s.newN / s.n >= 0.6 ? '🆕 ' : '') + w;
     const small = document.createElement('small');
     small.textContent = `${s.n}개 · ${fmt2(s.views)}회`;
     b.appendChild(small);
@@ -658,8 +724,15 @@ document.getElementById('csvBtn').onclick = () => {
       .forEach((p, i) => rows.push([i + 1, p.account, p.text, p.likes, p.replies,
         state.tab === 'x' ? p.retweets : p.reposts, p.views || '', p.url]));
     downloadCsv(rows, state.tab);
+  } else if (state.tab === 'channels') {
+    const rows = [['순위', '채널', '제목', '조회수', '채널평균대비', '게시일', '링크']];
+    chData.slice().sort((a, b) => chVal(b) - chVal(a))
+      .forEach((v, i) => rows.push([i + 1, v.channel, v.title, v.views,
+        chAvg[v.account] ? (v.views / chAvg[v.account]).toFixed(2) : '', v.published,
+        'https://www.youtube.com/watch?v=' + v.id]));
+    downloadCsv(rows, 'channels');
   } else {
-    alert('이 탭은 CSV 내보내기를 지원하지 않습니다. (유튜브·쇼츠·릴스·틱톡·트위터·스레드 탭에서 사용하세요)');
+    alert('이 탭은 CSV 내보내기를 지원하지 않습니다. (유튜브·쇼츠·릴스·틱톡·트위터·스레드·채널 탭에서 사용하세요)');
   }
 };
 
@@ -691,10 +764,15 @@ function videoCard(v, rank) {
   const dailyStr = vidState.sort === 'daily' && ageDays(v.published) > 0
     ? `<span class="views">⚡ 일 ${fmt2(Math.round(dailyViews(v)))}회</span>`
     : '';
+  // 전날 스냅샷 대비 순위 변동(조회수순일 때) / 신규 진입 배지
+  const delta = (vidState.sort === 'views' && v.prevRank) ? v.prevRank - rank : 0;
+  const deltaStr = v.isNew ? '<span class="delta new">NEW</span>'
+    : delta > 0 ? `<span class="delta up">▲${delta}</span>`
+    : delta < 0 ? `<span class="delta down">▼${-delta}</span>` : '';
   el.innerHTML = `
     <div style="position:relative">
       <img class="thumb" loading="lazy" alt="">
-      <div class="rank${rank <= 3 ? ' top' : ''}">${rank}위</div>
+      <div class="rank${rank <= 3 ? ' top' : ''}">${rank}위${deltaStr}</div>
       ${v.length ? `<div class="len" style="bottom:8px"></div>` : ''}
     </div>
     <div class="meta">
@@ -719,15 +797,41 @@ function videoCard(v, rank) {
   return el;
 }
 
-/* ---------- 재생 모달 ---------- */
+/* ---------- 재생 모달 (+ 인기 댓글) ---------- */
+async function loadComments(id) {
+  const box = document.getElementById('cmtBox');
+  box.innerHTML = '<div class="cmt" style="color:var(--muted)">💬 인기 댓글을 불러오는 중...</div>';
+  try {
+    const d = await (await fetch('/api/comments?id=' + encodeURIComponent(id))).json();
+    const cs = d.comments || [];
+    box.innerHTML = '';
+    if (!cs.length) {
+      box.innerHTML = '<div class="cmt" style="color:var(--muted)">댓글을 가져오지 못했습니다. (댓글이 없거나 조회가 제한된 영상)</div>';
+      return;
+    }
+    cs.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'cmt';
+      el.innerHTML = '<div class="chead"><b></b> <span class="clike"></span></div><div class="ctext"></div>';
+      el.querySelector('b').textContent = c.author || '(익명)';
+      el.querySelector('.clike').textContent = c.likes ? '👍 ' + c.likes : '';
+      el.querySelector('.ctext').textContent = c.text;
+      box.appendChild(el);
+    });
+  } catch (e) {
+    box.innerHTML = '';
+  }
+}
 function openPlayer(id, vertical) {
   document.getElementById('modalBox').className = 'modal-box' + (vertical ? ' vertical' : '');
   document.getElementById('player').src = `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1`;
   document.getElementById('openExternal').href = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
   document.getElementById('modal').classList.add('open');
+  loadComments(id);
 }
 function closePlayer() {
   document.getElementById('player').src = '';
+  document.getElementById('cmtBox').innerHTML = '';
   document.getElementById('modal').classList.remove('open');
 }
 document.getElementById('closeModal').onclick = closePlayer;
@@ -1186,6 +1290,152 @@ initFoldMenu('ttSortMenu', [
   { key: 'comments', label: '댓글순', icon: '💬' },
 ], tiktokState, () => renderTikTok());
 
+/* ---------- 📺 유튜브 채널 추적 탭 ---------- */
+let chData = [];
+const chState = { sort: 'chratio' };  // chratio | views | recent
+let chAvg = {};  // account → 평균 조회수
+function chVal(v) {
+  if (chState.sort === 'chratio') return chAvg[v.account] ? v.views / chAvg[v.account] : 0;
+  if (chState.sort === 'recent') { const a = ageDays(v.published); return a > 0 ? -a : -1e9; }
+  return v.views || 0;
+}
+async function loadChannels(force = false) {
+  const status = document.getElementById('chStatus');
+  const grid = document.getElementById('chGrid');
+  status.style.display = 'block';
+  status.textContent = '채널 영상을 불러오는 중입니다...';
+  grid.innerHTML = '';
+  try {
+    const data = await (await fetch('/api/channels' + (force ? '?force=1' : ''))).json();
+    renderChChips(data.accounts);
+    document.getElementById('updated').textContent =
+      '업데이트: ' + new Date(data.fetchedAt * 1000).toLocaleTimeString('ko-KR');
+    chData = data.videos || [];
+    if (!data.accounts.length) {
+      document.getElementById('chCount').textContent = '';
+      status.textContent = '아직 추적하는 채널이 없습니다. 위에서 벤치마킹할 채널을 추가해 보세요.';
+      return;
+    }
+    if (!chData.length) {
+      document.getElementById('chCount').textContent = '';
+      status.textContent = '채널 영상을 가져오지 못했습니다. 채널 핸들이 맞는지 확인하거나 잠시 후 새로고침해 주세요.';
+      return;
+    }
+    // 채널별 평균 조회수 (터진 영상 판별 기준)
+    chAvg = {};
+    const grp = {};
+    chData.forEach(v => (grp[v.account] = grp[v.account] || []).push(v.views || 0));
+    Object.entries(grp).forEach(([a, arr]) => { chAvg[a] = arr.reduce((s, x) => s + x, 0) / arr.length || 1; });
+    status.style.display = 'none';
+    renderChannels();
+  } catch (e) {
+    status.textContent = '불러오기에 실패했습니다. 네트워크를 확인해 주세요.';
+  }
+}
+function renderChannels() {
+  const grid = document.getElementById('chGrid');
+  const label = { chratio: '채널 평균 대비', views: '조회수', recent: '최신' };
+  const sorted = chData.slice().sort((a, b) => chVal(b) - chVal(a));
+  grid.innerHTML = '';
+  sorted.forEach((v, i) => {
+    const el = document.createElement('div');
+    el.className = 'card';
+    const r = chAvg[v.account] ? v.views / chAvg[v.account] : 0;
+    const hot = r >= 2;  // 평소의 2배 이상이면 '터진 영상'
+    el.innerHTML = `
+      <div style="position:relative">
+        <img class="thumb" loading="lazy" alt="">
+        <div class="rank${i < 3 ? ' top' : ''}">${i + 1}위</div>
+        ${v.length ? `<div class="len" style="bottom:8px"></div>` : ''}
+      </div>
+      <div class="meta">
+        <div class="title"></div>
+        <div class="sub">
+          <span class="${chState.sort === 'views' ? 'views' : ''}">조회수 ${fmt(v.views)}</span>
+          <span class="${chState.sort === 'chratio' || hot ? 'views' : ''}">${hot ? '🔥' : '📊'} 평균 대비 ${r >= 10 ? Math.round(r) : r.toFixed(1)}배</span>
+        </div>
+        <div class="sub" style="margin-top:3px"><span class="chn"></span><span class="pub"></span></div>
+      </div>`;
+    el.querySelector('.thumb').src = v.thumbnail;
+    el.querySelector('.title').textContent = v.title;
+    el.querySelector('.chn').textContent = v.channel;
+    el.querySelector('.pub').textContent = v.published || '';
+    if (v.length) el.querySelector('.len').textContent = v.length;
+    favButton(el.querySelector('div'), {
+      url: 'https://www.youtube.com/watch?v=' + v.id,
+      title: v.title, thumb: v.thumbnail,
+      sub: '📺 ' + v.channel + ' · 조회수 ' + fmt(v.views),
+    });
+    el.onclick = () => openPlayer(v.id, false);
+    grid.appendChild(el);
+  });
+  document.getElementById('chCount').textContent = `${label[chState.sort]} 기준 · 총 ${sorted.length}개`;
+}
+function renderChChips(accounts) {
+  const box = document.getElementById('chChips');
+  box.innerHTML = '';
+  accounts.forEach(name => {
+    const chip = document.createElement('span');
+    chip.className = 'acc-chip';
+    chip.innerHTML = `@<b></b><button title="삭제">✕</button>`;
+    chip.querySelector('b').textContent = name;
+    chip.querySelector('button').onclick = () => updateChannel('remove', name);
+    box.appendChild(chip);
+  });
+}
+async function updateChannel(action, username) {
+  await fetch('/api/channels/accounts', {
+    method: 'POST', headers: POST_HEADERS,
+    body: JSON.stringify({ action, username })
+  });
+  loadChannels(true);
+}
+document.getElementById('chAdd').onclick = () => {
+  const input = document.getElementById('chInput');
+  const name = input.value.trim().replace(/^@/, '').replace(/^https?:\/\/(www\.)?youtube\.com\/@?/, '').split(/[/?]/)[0];
+  if (!name) return;
+  input.value = '';
+  updateChannel('add', name);
+};
+document.getElementById('chInput').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('chAdd').click(); });
+initFoldMenu('chSortMenu', [
+  { key: 'chratio', label: '채널 평균 대비 (터진 영상)', icon: '🔥' },
+  { key: 'views', label: '조회수순', icon: '👁️' },
+  { key: 'recent', label: '최신순', icon: '🕐' },
+], chState, () => renderChannels());
+
+/* ---------- 🔔 떡상 알림 (저장 키워드 자동 감시) ---------- */
+async function checkAlerts() {
+  const kws = savedKeywords().slice(0, 5);  // 부하를 줄이기 위해 최대 5개
+  if (!kws.length) return;
+  const box = document.getElementById('alertBar');
+  const hits = [];
+  for (const kw of kws) {
+    try {
+      const q = new URLSearchParams({ q: kw, category: '전체', period: 'week',
+        shorts: '0', force: '0', enrich: '0', region: state.region });
+      const d = await (await fetch('/api/videos?' + q)).json();
+      // 전날 기록에 없다가 새로 나타났는데 이미 조회수 30만+ = 떡상 후보
+      const n = (d.videos || []).filter(v => v.isNew && v.views >= 300000).length;
+      if (n) hits.push([kw, n]);
+    } catch (e) { /* 무시 */ }
+  }
+  if (!hits.length) return;
+  box.style.display = 'flex';
+  box.innerHTML = '';
+  hits.forEach(([kw, n]) => {
+    const b = document.createElement('button');
+    b.textContent = `🔔 "${kw}" 떡상 후보 ${n}건 — 보러가기`;
+    b.onclick = () => {
+      state.search = kw;
+      document.getElementById('searchInput').value = kw;
+      renderChips(); loadVideos();
+      window.scrollTo({ top: 0 });
+    };
+    box.appendChild(b);
+  });
+}
+
 /* ---------- 탭 / 기간 / 새로고침 ---------- */
 document.getElementById('tabs').onclick = e => {
   const btn = e.target.closest('.tab');
@@ -1200,6 +1450,7 @@ document.getElementById('tabs').onclick = e => {
   document.getElementById('xView').style.display = state.tab === 'x' ? 'block' : 'none';
   document.getElementById('threadsView').style.display = state.tab === 'threads' ? 'block' : 'none';
   document.getElementById('tiktokView').style.display = state.tab === 'tiktok' ? 'block' : 'none';
+  document.getElementById('channelsView').style.display = state.tab === 'channels' ? 'block' : 'none';
   document.getElementById('savedView').style.display = state.tab === 'saved' ? 'block' : 'none';
   if (isVideo) loadVideos();
   else if (state.tab === 'ai') loadAI();
@@ -1207,6 +1458,7 @@ document.getElementById('tabs').onclick = e => {
   else if (state.tab === 'x') loadSocial('x');
   else if (state.tab === 'threads') loadSocial('threads');
   else if (state.tab === 'tiktok') loadTikTok();
+  else if (state.tab === 'channels') loadChannels();
   else if (state.tab === 'saved') renderSaved();
 };
 document.getElementById('periods').onclick = e => {
@@ -1226,7 +1478,7 @@ document.getElementById('searchForm').addEventListener('submit', e => {
     state.tab = 'youtube';
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'youtube'));
     document.getElementById('toolbar').style.display = 'flex';
-    ['videoView','aiView','reelsView','xView','threadsView','tiktokView','savedView'].forEach(id =>
+    ['videoView','aiView','reelsView','xView','threadsView','tiktokView','channelsView','savedView'].forEach(id =>
       document.getElementById(id).style.display = id === 'videoView' ? 'block' : 'none');
   }
   renderChips();
@@ -1239,10 +1491,12 @@ document.getElementById('refreshBtn').onclick = () => {
   else if (state.tab === 'x') loadSocial('x', true);
   else if (state.tab === 'threads') loadSocial('threads', true);
   else if (state.tab === 'tiktok') loadTikTok(true);
+  else if (state.tab === 'channels') loadChannels(true);
+  else if (state.tab === 'saved') renderSaved();
   else loadVideos(true);
 };
 
-initCategories().then(() => loadVideos());
+initCategories().then(() => { loadVideos(); checkAlerts(); });
 </script>
 </body>
 </html>
