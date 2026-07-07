@@ -52,6 +52,16 @@
   #alertBar { display: none; gap: 8px; flex-wrap: wrap; padding: 10px 24px 0; }
   #alertBar button { background: rgba(255,209,102,.12); border: 1px solid #6b5b1e; color: #ffd166; border-radius: 999px; padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
   #alertBar button:hover { background: rgba(255,209,102,.22); }
+  .modal-box { max-height: 92vh; overflow-y: auto; }
+  #anaBox { margin-top: 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 13px 15px; display: none; }
+  #anaBox.on { display: block; }
+  #anaBox h4 { font-size: 13.5px; margin-bottom: 9px; }
+  #anaBox h4 small { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
+  .ana { display: flex; gap: 9px; padding: 6px 0; font-size: 12.5px; line-height: 1.55; border-top: 1px solid var(--border); }
+  .ana:first-of-type { border-top: none; }
+  .ana .alabel { flex-shrink: 0; font-weight: 700; width: 118px; }
+  .ana .abody { color: var(--muted); }
+  .ana .abody b { color: var(--text); }
   #cmtBox { margin-top: 12px; max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
   .cmt { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 13px; font-size: 13px; line-height: 1.5; }
   .cmt .chead { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
@@ -383,6 +393,7 @@
       <a id="openExternal" target="_blank" rel="noopener">유튜브에서 열기 ↗</a>
       <button id="closeModal">닫기</button>
     </div>
+    <div id="anaBox"></div>
     <div id="cmtBox"></div>
   </div>
 </div>
@@ -639,12 +650,16 @@ const KW_STOP = new Set(['영상','진짜','완전','오늘','이번','정말','
   '합니다','했다','했는데','하기','그리고','무엇','어떤','에서','부터','까지','하고','인가','인가요',
   '그냥','바로','함께','최초','충격','결국','드디어','순간','모든','이유','방법','후기','공개','논란',
   'the','and','for','with','you','this','that','how','what','shorts','ep','vs','feat','ft','full']);
+// 단어 끝의 흔한 조사(이/가/은/는/을/를...)를 떼어 '가격'과 '가격이'를 같은 단어로 집계
+const STRIP_PARTICLE = /(이|가|은|는|을|를|도|만|의|에|요|들)$/;  // '과/와'는 피부과·치과 같은 단어를 훼손해 제외
+const titleWords = t => (t || '').toLowerCase()
+  .replace(/[^0-9a-z가-힣\s]/g, ' ').split(/\s+/)
+  .map(w => w.length >= 3 && /[가-힣]$/.test(w) ? w.replace(STRIP_PARTICLE, '') : w)
+  .filter(w => w.length >= 2 && !KW_STOP.has(w) && !/^\d+$/.test(w));
 function computeKeywords(list) {
   const score = {};
   list.forEach(v => {
-    const words = new Set((v.title || '').toLowerCase()
-      .replace(/[^0-9a-z가-힣\s]/g, ' ').split(/\s+/)
-      .filter(w => w.length >= 2 && !KW_STOP.has(w) && !/^\d+$/.test(w)));
+    const words = new Set(titleWords(v.title));
     words.forEach(w => {
       if (!score[w]) score[w] = { n: 0, views: 0, newN: 0 };
       score[w].n++;
@@ -793,45 +808,136 @@ function videoCard(v, rank) {
     title: v.title, thumb: v.thumbnail,
     sub: '▶ ' + v.channel + ' · 조회수 ' + fmt(v.views),
   });
-  el.onclick = () => openPlayer(v.id, state.tab === 'shorts');
+  el.onclick = () => openPlayer(v, state.tab === 'shorts', vidData);
   return el;
 }
 
-/* ---------- 재생 모달 (+ 인기 댓글) ---------- */
+/* ---------- 재생 모달 (+ 인기 댓글 + 흥행 신호 분석) ---------- */
 async function loadComments(id) {
   const box = document.getElementById('cmtBox');
   box.innerHTML = '<div class="cmt" style="color:var(--muted)">💬 인기 댓글을 불러오는 중...</div>';
+  let cs = [];
   try {
     const d = await (await fetch('/api/comments?id=' + encodeURIComponent(id))).json();
-    const cs = d.comments || [];
-    box.innerHTML = '';
-    if (!cs.length) {
-      box.innerHTML = '<div class="cmt" style="color:var(--muted)">댓글을 가져오지 못했습니다. (댓글이 없거나 조회가 제한된 영상)</div>';
-      return;
-    }
-    cs.forEach(c => {
-      const el = document.createElement('div');
-      el.className = 'cmt';
-      el.innerHTML = '<div class="chead"><b></b> <span class="clike"></span></div><div class="ctext"></div>';
-      el.querySelector('b').textContent = c.author || '(익명)';
-      el.querySelector('.clike').textContent = c.likes ? '👍 ' + c.likes : '';
-      el.querySelector('.ctext').textContent = c.text;
-      box.appendChild(el);
-    });
-  } catch (e) {
-    box.innerHTML = '';
+    cs = d.comments || [];
+  } catch (e) { /* 무시 */ }
+  box.innerHTML = '';
+  if (!cs.length) {
+    box.innerHTML = '<div class="cmt" style="color:var(--muted)">댓글을 가져오지 못했습니다. (댓글이 없거나 조회가 제한된 영상)</div>';
+    return cs;
   }
+  cs.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'cmt';
+    el.innerHTML = '<div class="chead"><b></b> <span class="clike"></span></div><div class="ctext"></div>';
+    el.querySelector('b').textContent = c.author || '(익명)';
+    el.querySelector('.clike').textContent = c.likes ? '👍 ' + c.likes : '';
+    el.querySelector('.ctext').textContent = c.text;
+    box.appendChild(el);
+  });
+  return cs;
 }
-function openPlayer(id, vertical) {
+
+/* 흥행 신호 분석: 왜 이 영상이 잘 됐는지 데이터로 추정합니다. */
+function analyzeVideo(v, comments, ctxList) {
+  const items = [];
+  // 1) 확산 범위 — 구독자 대비 조회수
+  if (v.subs) {
+    const r = v.views / v.subs;
+    const rTxt = r >= 10 ? Math.round(r) + '배' : r.toFixed(1) + '배';
+    items.push(['🚀 확산 범위',
+      r >= 10 ? `구독자(${fmt2(v.subs)}명)의 <b>${rTxt}</b>가 시청 — 채널 팬이 아니라 <b>알고리즘 추천·공유로 외부에서 대량 유입</b>된 영상입니다. 소재 자체의 수요가 강하다는 뜻입니다.`
+      : r >= 3 ? `구독자 대비 <b>${rTxt}</b> 조회 — 채널 밖 시청자에게 확산됐습니다. 소재/제목이 신규 시청자를 끌어왔습니다.`
+      : r >= 1 ? `구독자 대비 ${rTxt} — 구독자층과 신규 유입이 반반 정도인 평균적 확산입니다.`
+      : `조회수가 구독자 수(${fmt2(v.subs)}명)보다 적음 — <b>기존 팬덤 위주로 소비</b>된 영상입니다. 채널 파워로 나온 조회수라 소재를 따라 하기엔 근거가 약합니다.`]);
+  }
+  // 2) 확산 속도
+  const age = ageDays(v.published);
+  if (age > 0 && v.views) {
+    const dv = Math.round(v.views / Math.max(age, 1));
+    items.push(['⚡ 확산 속도',
+      `게시 ${v.published} · 일평균 <b>${fmt2(dv)}회</b>` +
+      (age <= 3 && v.views >= 100000 ? ' — 초반 폭발형입니다. 알고리즘 추천을 강하게 탄 신호입니다.'
+       : age >= 21 ? ' — 오래 꾸준히 쌓인 스테디형입니다. 검색 유입(SEO형 소재)일 가능성이 큽니다.'
+       : ' — 꾸준한 확산 속도입니다.')]);
+  }
+  // 3) 반응 품질 — 좋아요율
+  if (v.likes && v.views) {
+    const lr = v.likes / v.views * 100;
+    items.push(['👍 반응 품질',
+      `좋아요율 <b>${lr.toFixed(1)}%</b>` +
+      (lr >= 4 ? ' — 매우 높음. 시청자가 공감·만족한 콘텐츠로, 같은 포맷 재사용 가치가 큽니다.'
+       : lr >= 2 ? ' — 양호한 만족도입니다.'
+       : ' — 낮은 편. 제목·썸네일로 클릭은 끌었지만 내용 만족은 약했을 수 있습니다(따라 하면 이탈 위험).')]);
+  }
+  // 4) 제목 후킹 요소
+  const t = v.title || '';
+  const hooks = [];
+  if (/\d/.test(t)) hooks.push('숫자 제시(구체성)');
+  if (/[?？]|왜 |이유|어떻게|비밀|정체/.test(t)) hooks.push('호기심 갭(질문·이유)');
+  if (/vs|비교|차이/i.test(t)) hooks.push('비교·대결 구도');
+  if (/충격|경악|미친|레전드|최초|역대급|결국|끝판왕/.test(t)) hooks.push('강한 감정 표현');
+  if (/\.\.\.|…/.test(t)) hooks.push('말줄임(궁금증 유발)');
+  if (/후기|리뷰|솔직|내돈내산/.test(t)) hooks.push('경험담·후기(신뢰 소구)');
+  if (/만원|억 |억원|가격|얼마|원짜리/.test(t)) hooks.push('금액·가성비 소구');
+  if (/무조건|반드시|절대|하지 마|하지마|금지/.test(t)) hooks.push('단정·경고형 문구');
+  if (hooks.length) items.push(['✍️ 제목 요인', hooks.map(h => `<b>${h}</b>`).join(' · ') + ' — 클릭을 부른 제목 장치입니다.']);
+  // 5) 소재 맥락 — 현재 목록에서 같은 키워드를 쓰는 영상 수
+  const my = new Set(titleWords(t));
+  const similar = (ctxList || []).filter(o => o.id !== v.id && titleWords(o.title).some(w => my.has(w))).length;
+  items.push(['📊 소재 맥락',
+    similar >= 3 ? `현재 목록에 유사 키워드 영상이 <b>${similar}개</b> 더 상위권 — <b>주제 자체가 지금 유행 중</b>입니다. 빨리 올리면 트렌드에 편승할 수 있지만 경쟁도 많습니다.`
+    : similar >= 1 ? `유사 소재 영상이 ${similar}개 — 관심이 형성되기 시작한 단계일 수 있습니다. 선점 여지가 있습니다.`
+    : `목록 안에 유사 소재가 없음 — <b>차별화된 소재/포맷으로 단독 흥행</b>한 영상입니다. 이 영상 고유의 접근을 분석할 가치가 있습니다.`]);
+  // 6) 시청자 반응 키워드 (댓글에서 반복 언급)
+  if (comments && comments.length >= 2) {
+    const freq = {};
+    comments.forEach(c => new Set(titleWords(c.text)).forEach(w => freq[w] = (freq[w] || 0) + 1));
+    const top = Object.entries(freq).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([w]) => w);
+    if (top.length) items.push(['💬 시청자 반응', `댓글에서 반복 언급: <b>${top.join(', ')}</b> — 시청자가 실제로 반응한 포인트입니다. 다음 콘텐츠 소재 힌트로 쓰세요.`]);
+  }
+  return items;
+}
+function renderAnalysis(v, comments, ctxList) {
+  const box = document.getElementById('anaBox');
+  const items = analyzeVideo(v, comments, ctxList);
+  if (!items.length) { box.className = ''; box.innerHTML = ''; return; }
+  box.className = 'on';
+  box.innerHTML = '<h4>🔍 왜 잘 됐을까? <small>공개 데이터 신호 기반 추정 분석</small></h4>';
+  items.forEach(([label, html]) => {
+    const el = document.createElement('div');
+    el.className = 'ana';
+    el.innerHTML = `<span class="alabel">${label}</span><span class="abody">${html}</span>`;
+    box.appendChild(el);
+  });
+}
+let playerSeq = 0;
+async function openPlayer(v, vertical, ctxList) {
+  const seq = ++playerSeq;
   document.getElementById('modalBox').className = 'modal-box' + (vertical ? ' vertical' : '');
-  document.getElementById('player').src = `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1`;
-  document.getElementById('openExternal').href = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+  document.getElementById('player').src = `https://www.youtube.com/embed/${encodeURIComponent(v.id)}?autoplay=1`;
+  document.getElementById('openExternal').href = `https://www.youtube.com/watch?v=${encodeURIComponent(v.id)}`;
+  document.getElementById('anaBox').className = '';
+  document.getElementById('anaBox').innerHTML = '';
   document.getElementById('modal').classList.add('open');
-  loadComments(id);
+  const comments = await loadComments(v.id);
+  // 좋아요·구독자 데이터가 아직 없으면 이 영상만 즉석 조회해 분석에 반영
+  if (!v.subs || !v.likes) {
+    try {
+      const s = await (await fetch('/api/stats?id=' + encodeURIComponent(v.id))).json();
+      v.likes = v.likes || s.likes || 0;
+      v.subs = v.subs || s.subs || 0;
+    } catch (e) { /* 무시 */ }
+  }
+  if (seq !== playerSeq) return;  // 그 사이 다른 영상을 열었으면 중단
+  renderAnalysis(v, comments, ctxList);
 }
 function closePlayer() {
+  playerSeq++;
   document.getElementById('player').src = '';
   document.getElementById('cmtBox').innerHTML = '';
+  document.getElementById('anaBox').className = '';
+  document.getElementById('anaBox').innerHTML = '';
   document.getElementById('modal').classList.remove('open');
 }
 document.getElementById('closeModal').onclick = closePlayer;
@@ -1366,7 +1472,7 @@ function renderChannels() {
       title: v.title, thumb: v.thumbnail,
       sub: '📺 ' + v.channel + ' · 조회수 ' + fmt(v.views),
     });
-    el.onclick = () => openPlayer(v.id, false);
+    el.onclick = () => openPlayer(v, false, chData);
     grid.appendChild(el);
   });
   document.getElementById('chCount').textContent = `${label[chState.sort]} 기준 · 총 ${sorted.length}개`;

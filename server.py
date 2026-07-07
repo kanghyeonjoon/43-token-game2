@@ -922,6 +922,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"comments": comments})
             return
 
+        if parsed.path == "/api/stats":
+            # 영상 1개의 좋아요·구독자 수 즉석 조회 (분석 카드용)
+            vid = qs.get("id", [""])[0]
+            if not re.fullmatch(r"[A-Za-z0-9_-]{5,20}", vid):
+                self._send(400, {"error": "bad video id"})
+                return
+            stats, _ = cached(("stats", vid), False,
+                              lambda: dict(zip(("likes", "subs"), yt_video_stats(vid))))
+            self._send(200, stats)
+            return
+
         if parsed.path == "/api/categories":
             self._send(200, {"categories": ["전체", "AI"] + list(CATEGORIES.keys())})
             return
