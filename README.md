@@ -11,7 +11,7 @@ python3 server.py
 
 브라우저에서 **http://localhost:8778** 접속
 
-또는 `실행-Mac.command`(맥) / `실행-Windows.bat`(윈도우)를 더블클릭하세요.
+또는 `start-mac.command`(맥) / `start-windows.bat`(윈도우)를 더블클릭하세요.
 
 ## 기능
 
